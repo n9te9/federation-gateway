@@ -2,29 +2,30 @@ package gateway
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 
 	"github.com/n9te9/federation-gateway/gateway/federation"
 	"github.com/n9te9/federation-gateway/registry"
-	"github.com/n9te9/goliteql/schema"
+	"github.com/n9te9/goliteql/query"
 )
 
 type gateway struct {
-	superGraph *federation.SuperGraph
+	superGraph  *federation.SuperGraph
+	queryParser *query.Parser
 }
 
 var _ http.Handler = (*gateway)(nil)
 
 func NewGateway() *gateway {
 	return &gateway{
-		superGraph: &federation.SuperGraph{},
+		superGraph:  &federation.SuperGraph{},
+		queryParser: query.NewParserWithLexer(),
 	}
 }
 
 func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
-	case "/schema/register":
+	case "/schema/registeration":
 		if r.Method == http.MethodPost {
 			g.RegisterSchema(w, r)
 		}
@@ -41,8 +42,18 @@ func (g *gateway) RegisterSchema(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, req := range reqs {
-		s, err := schema.NewParser(schema.NewLexer()).Parse(req.SDL)
+		subgraph, err := federation.NewSubGraph(req.Name, []byte(req.SDL), req.Host)
+		if err != nil {
+			http.Error(w, "Failed to create subgraph", http.StatusBadRequest)
+			return
+		}
+		g.superGraph.SubGraphs = append(g.superGraph.SubGraphs, subgraph)
 	}
+}
+
+type Request struct {
+	Query     []byte                 `json:"query"`
+	Variables map[string]interface{} `json:"variables"`
 }
 
 func (g *gateway) Routing(w http.ResponseWriter, r *http.Request) {
@@ -51,9 +62,15 @@ func (g *gateway) Routing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query, err := io.ReadAll(r.Body)
+	var req Request
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Failed to decode request body", http.StatusBadRequest)
+		return
+	}
+
+	document, err := g.queryParser.Parse(req.Query)
 	if err != nil {
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		http.Error(w, "Failed to parse query", http.StatusBadRequest)
 		return
 	}
 

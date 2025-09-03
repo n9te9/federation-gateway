@@ -1,6 +1,11 @@
 package federation
 
-import "github.com/n9te9/goliteql/schema"
+import (
+	"context"
+
+	"github.com/n9te9/goliteql/query"
+	"github.com/n9te9/goliteql/schema"
+)
 
 type SuperGraph struct {
 	Schema    *schema.Schema
@@ -52,34 +57,37 @@ func (sg *SuperGraph) Merge() error {
 }
 
 func (sg *SuperGraph) registerExtentions(subGraphSchema *schema.Schema) {
-	sg.Schema.Definition.Extentions = append(sg.Schema.Definition.Extentions, subGraphSchema.Definition.Extentions...)
-	for _, operation := range sg.Schema.Operations {
-		operation.Extentions = append(operation.Extentions, subGraphSchema.Operations...)
-	}
+	sg.Schema.Extends = append(sg.Schema.Extends, subGraphSchema.Extends...)
+}
 
-	for _, typeDefinition := range sg.Schema.Types {
-		typeDefinition.Extentions = append(typeDefinition.Extentions, subGraphSchema.Types...)
-	}
+func (sg *SuperGraph) Execute(ctx context.Context, plan *Plan) (any, error) {
 
-	for _, interfaceDefinition := range sg.Schema.Interfaces {
-		interfaceDefinition.Extentions = append(interfaceDefinition.Extentions, subGraphSchema.Interfaces...)
-	}
+	return nil, nil
+}
 
-	for _, unionDefinition := range sg.Schema.Unions {
-		unionDefinition.Extentions = append(unionDefinition.Extentions, subGraphSchema.Unions...)
-	}
+type Plan struct {
+	Steps []*Step
+}
 
-	for _, enumDefinition := range sg.Schema.Enums {
-		enumDefinition.Extentions = append(enumDefinition.Extentions, subGraphSchema.Enums...)
-	}
+type Step struct {
+	SubGraph  *SubGraph
+	DependsOn []*Step
 
-	for _, inputDefinition := range sg.Schema.Inputs {
-		inputDefinition.Extentions = append(inputDefinition.Extentions, subGraphSchema.Inputs...)
-	}
+	Status StepStatus
+	Err    error
+}
 
-	for _, directiveDefinition := range sg.Schema.Directives {
-		directiveDefinition.Extentions = append(directiveDefinition.Extentions, subGraphSchema.Directives...)
-	}
+type StepStatus int
+
+const (
+	Pending StepStatus = iota
+	Running
+	Completed
+	Failed
+)
+
+func (sg *SubGraph) Plan(document *query.Document) *Plan {
+	return nil
 }
 
 func NewSubGraph(name string, src []byte, host string) (*SubGraph, error) {
