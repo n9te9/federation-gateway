@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"sync/atomic"
 
-	"github.com/n9te9/federation-gateway/registry/federation"
+	"github.com/n9te9/federation-gateway/federation"
 )
 
 type Registry struct {
@@ -71,8 +71,14 @@ func (r *Registry) RegisterGateway(w http.ResponseWriter, req *http.Request) {
 
 	registratedGraphs := r.registratedGraph.Load().([]*federation.SubGraph)
 	for _, rg := range body.RegistrationGraphs {
+		subGraph, err := federation.NewSubGraph(rg.Name, []byte(rg.SDL), rg.Host)
+		if err != nil {
+			http.Error(w, "Failed to create subgraph", http.StatusBadRequest)
+			return
+		}
+
 		r.addHostChan <- rg.Host
-		registratedGraphs = append(registratedGraphs, federation.NewSubGraph(rg.Name, rg.Host, rg.SDL))
+		registratedGraphs = append(registratedGraphs, subGraph)
 	}
 
 	gatewayHosts := r.gatewayHosts.Load().(map[string]struct{})
@@ -98,40 +104,4 @@ func (r *Registry) RegisterGateway(w http.ResponseWriter, req *http.Request) {
 	}
 
 	r.registratedGraph.Store(registratedGraphs)
-}
-
-func (r *Registry) RegisterSubGraph(name, host string, sdl []byte) error {
-	registratedGraphs := r.registratedGraph.Load().([]*federation.SubGraph)
-	registratedGraphs = append(registratedGraphs, federation.NewSubGraph(name, host, string(sdl)))
-	r.registratedGraph.Store(registratedGraphs)
-
-	gatewayHosts := r.gatewayHosts.Load().(map[string]struct{})
-	for sgHost := range gatewayHosts {
-		body := RegistrationRequest{
-			RegistrationGraphs: []RegistrationGraph{
-				{
-					Name: name,
-					Host: host,
-					SDL:  string(sdl),
-				},
-			},
-		}
-		reqBody, err := json.Marshal(body)
-		if err != nil {
-			return err
-		}
-
-		registerGatewayRequest, err := http.NewRequest(http.MethodPost, sgHost+"/schema/registration", bytes.NewBuffer(reqBody))
-		if err != nil {
-			return err
-		}
-
-		go func() {
-			if _, err := r.client.Do(registerGatewayRequest); err != nil {
-				return
-			}
-		}()
-	}
-
-	return nil
 }

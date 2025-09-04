@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/n9te9/federation-gateway/gateway/federation"
+	"github.com/n9te9/federation-gateway/federation"
 	"github.com/n9te9/federation-gateway/registry"
 	"github.com/n9te9/goliteql/query"
 )
@@ -47,7 +47,11 @@ func (g *gateway) RegisterSchema(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Failed to create subgraph", http.StatusBadRequest)
 			return
 		}
-		g.superGraph.SubGraphs = append(g.superGraph.SubGraphs, subgraph)
+
+		if err := g.superGraph.Merge(subgraph); err != nil {
+			http.Error(w, "Failed to merge subgraph", http.StatusBadRequest)
+			return
+		}
 	}
 }
 
@@ -73,5 +77,4 @@ func (g *gateway) Routing(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to parse query", http.StatusBadRequest)
 		return
 	}
-
 }
