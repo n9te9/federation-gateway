@@ -28,6 +28,48 @@ type Step struct {
 	Err    error
 }
 
+func (s *Step) findExtendKeys() [][]string {
+	for _, ext := range s.SubGraph.Schema.Extends {
+		switch t := ext.(type) {
+		case *schema.TypeDefinition:
+			directives := schema.Directives(t.Directives)
+			keyDirective := directives.Get([]byte("key"))
+			if keyDirective == nil {
+				return nil
+			}
+
+			return s.findKeyDirectiveFieldArguments(keyDirective.Arguments)
+		}
+	}
+
+	return nil
+}
+
+func (s *Step) findKeyDirectiveFieldArguments(keyDirectiveArgs []*schema.DirectiveArgument) [][]string {
+	ret := make([][]string, 0)
+	for _, arg := range keyDirectiveArgs {
+		if string(arg.Name) == "fields" {
+			v := strings.Trim(string(arg.Value), `"`)
+			keys := strings.Split(v, " ")
+			ret = append(ret, keys)
+		}
+	}
+
+	return ret
+}
+
+func (s *Step) hasField(fieldName string) bool {
+	for _, t := range s.SubGraph.Schema.Types {
+		for _, field := range t.Fields {
+			if fieldName == string(field.Name) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 type StepStatus int
 
 const (
@@ -43,8 +85,31 @@ func NewPlanner(superGraph *graph.SuperGraph) *planner {
 	}
 }
 
+type Steps []*Step
+
+func (s Steps) findDependedStep(step *Step) []*Step {
+	dependKeys := step.findExtendKeys()
+
+	ret := make([]*Step, 0)
+	for _, st := range s {
+		if st == step {
+			continue
+		}
+
+		for _, keys := range dependKeys {
+			for _, key := range keys {
+				if st.hasField(key) {
+					ret = append(ret, st)
+				}
+			}
+		}
+	}
+
+	return ret
+}
+
 type Plan struct {
-	Steps []*Step
+	Steps Steps
 }
 
 func (p *planner) Plan(doc *query.Document) (*Plan, error) {
@@ -73,7 +138,6 @@ func (p *planner) findOperationField(op *query.Operation) (*schema.TypeDefinitio
 			}
 		}
 	}
-
 	return nil, nil, errors.New("not found query operation")
 }
 
@@ -125,5 +189,17 @@ func (p *planner) plan(keys []string) *Plan {
 		})
 	}
 
+	for _, step := range plan.Steps {
+		dependsOn := plan.Steps.findDependedStep(step)
+		step.DependsOn = dependsOn
+	}
+
 	return plan
+}
+
+func (p *planner) solveDependency(plan *Plan) {
+	for _, step := range plan.Steps {
+		dependsOn := plan.Steps.findDependedStep(step)
+		step.DependsOn = dependsOn
+	}
 }

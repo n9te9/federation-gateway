@@ -38,7 +38,7 @@ func TestSuperGraph_Merge(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed to parse root schema: %v", err)
 				}
-				superGraph.RootGraph = sg
+				superGraph.SubGraphs = append(superGraph.SubGraphs, sg)
 
 				return superGraph
 			}(),
@@ -142,7 +142,7 @@ func TestSuperGraph_GetSubGraphByKey(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed to parse root schema: %v", err)
 				}
-				superGraph.RootGraph = sg
+				superGraph.SubGraphs = append(superGraph.SubGraphs, sg)
 
 				subgraphSDL := `extend type Product @key(fields: "upc") {
 					upc: String! @external

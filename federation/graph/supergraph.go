@@ -9,7 +9,6 @@ import (
 
 type SuperGraph struct {
 	Schema       *schema.Schema
-	RootGraph    *SubGraph
 	SubGraphs    []*SubGraph
 	SDL          string
 	OwnershipMap map[string]*ownership

@@ -59,7 +59,7 @@ func TestPlanner_Plan(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed to parse root schema: %v", err)
 				}
-				superGraph.RootGraph = sg
+				superGraph.SubGraphs = append(superGraph.SubGraphs, sg)
 
 				subgraphSDL := `extend type Product @key(fields: "upc") {
 					upc: String! @external
@@ -81,6 +81,38 @@ func TestPlanner_Plan(t *testing.T) {
 			}(),
 			want: &planner.Plan{
 				Steps: []*planner.Step{
+					{
+						SubGraph: func() *graph.SubGraph {
+							sdl := `type Query {
+					products: [Product]
+				}
+				
+				type Product {
+					upc: String!
+					name: String
+					price: Int
+				}`
+							sg, err := graph.NewRootSubGraph("aaaaaaaaa", []byte(sdl), "")
+							if err != nil {
+								t.Fatal(err)
+							}
+
+							return sg
+						}(),
+						Selections: []*planner.Selection{
+							{
+								ParentType: "Product",
+								Field:      "upc",
+							},
+							{
+								ParentType: "Product",
+								Field:      "name",
+							},
+						},
+						DependsOn: []*planner.Step{},
+						Status:    planner.Pending,
+						Err:       nil,
+					},
 					{
 						SubGraph: func() *graph.SubGraph {
 							sdl := `extend type Product @key(fields: "upc") {
@@ -106,9 +138,42 @@ func TestPlanner_Plan(t *testing.T) {
 								Field:      "height",
 							},
 						},
-						DependsOn: nil,
-						Status:    planner.Pending,
-						Err:       nil,
+						DependsOn: []*planner.Step{
+							{
+								SubGraph: func() *graph.SubGraph {
+									sdl := `type Query {
+					products: [Product]
+				}
+				
+				type Product {
+					upc: String!
+					name: String
+					price: Int
+				}`
+									sg, err := graph.NewRootSubGraph("aaaaaaaaa", []byte(sdl), "")
+									if err != nil {
+										t.Fatal(err)
+									}
+
+									return sg
+								}(),
+								Selections: []*planner.Selection{
+									{
+										ParentType: "Product",
+										Field:      "upc",
+									},
+									{
+										ParentType: "Product",
+										Field:      "name",
+									},
+								},
+								DependsOn: []*planner.Step{},
+								Status:    planner.Pending,
+								Err:       nil,
+							},
+						},
+						Status: planner.Pending,
+						Err:    nil,
 					},
 				},
 			},
