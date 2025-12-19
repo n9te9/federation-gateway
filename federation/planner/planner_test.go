@@ -50,7 +50,7 @@ func TestPlanner_Plan(t *testing.T) {
 					name: String
 					price: Int
 				}`
-				sg, err := graph.NewRootSubGraph("aaaaaaaaa", []byte(sdl), "")
+				sg, err := graph.NewBaseSubGraph("aaaaaaaaa", []byte(sdl), "")
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -82,6 +82,7 @@ func TestPlanner_Plan(t *testing.T) {
 			want: &planner.Plan{
 				Steps: []*planner.Step{
 					{
+						ID: 0,
 						SubGraph: func() *graph.SubGraph {
 							sdl := `type Query {
 					products: [Product]
@@ -92,7 +93,7 @@ func TestPlanner_Plan(t *testing.T) {
 					name: String
 					price: Int
 				}`
-							sg, err := graph.NewRootSubGraph("aaaaaaaaa", []byte(sdl), "")
+							sg, err := graph.NewBaseSubGraph("aaaaaaaaa", []byte(sdl), "")
 							if err != nil {
 								t.Fatal(err)
 							}
@@ -109,11 +110,12 @@ func TestPlanner_Plan(t *testing.T) {
 								Field:      "name",
 							},
 						},
-						DependsOn: []*planner.Step{},
+						DependsOn: []int{},
 						Status:    planner.Pending,
 						Err:       nil,
 					},
 					{
+						ID: 1,
 						SubGraph: func() *graph.SubGraph {
 							sdl := `extend type Product @key(fields: "upc") {
 								upc: String! @external
@@ -138,42 +140,9 @@ func TestPlanner_Plan(t *testing.T) {
 								Field:      "height",
 							},
 						},
-						DependsOn: []*planner.Step{
-							{
-								SubGraph: func() *graph.SubGraph {
-									sdl := `type Query {
-					products: [Product]
-				}
-				
-				type Product {
-					upc: String!
-					name: String
-					price: Int
-				}`
-									sg, err := graph.NewRootSubGraph("aaaaaaaaa", []byte(sdl), "")
-									if err != nil {
-										t.Fatal(err)
-									}
-
-									return sg
-								}(),
-								Selections: []*planner.Selection{
-									{
-										ParentType: "Product",
-										Field:      "upc",
-									},
-									{
-										ParentType: "Product",
-										Field:      "name",
-									},
-								},
-								DependsOn: []*planner.Step{},
-								Status:    planner.Pending,
-								Err:       nil,
-							},
-						},
-						Status: planner.Pending,
-						Err:    nil,
+						DependsOn: []int{0},
+						Status:    planner.Pending,
+						Err:       nil,
 					},
 				},
 			},

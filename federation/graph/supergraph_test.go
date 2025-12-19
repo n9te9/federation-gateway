@@ -29,7 +29,7 @@ func TestSuperGraph_Merge(t *testing.T) {
 					price: Int
 				}`
 
-				sg, err := graph.NewRootSubGraph("aaaaaaaaa", []byte(sdl), "")
+				sg, err := graph.NewBaseSubGraph("aaaaaaaaa", []byte(sdl), "")
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -133,7 +133,7 @@ func TestSuperGraph_GetSubGraphByKey(t *testing.T) {
 					name: String
 					price: Int
 				}`
-				sg, err := graph.NewRootSubGraph("aaaaaaaaa", []byte(sdl), "")
+				sg, err := graph.NewBaseSubGraph("aaaaaaaaa", []byte(sdl), "")
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -38,7 +38,7 @@ func NewSubGraph(name string, src []byte, host string) (*SubGraph, error) {
 	}, nil
 }
 
-func NewRootSubGraph(name string, src []byte, host string) (*SubGraph, error) {
+func NewBaseSubGraph(name string, src []byte, host string) (*SubGraph, error) {
 	schema, err := schema.NewParser(schema.NewLexer()).Parse(src)
 	if err != nil {
 		return nil, err

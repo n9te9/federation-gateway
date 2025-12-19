@@ -19,10 +19,11 @@ type planner struct {
 }
 
 type Step struct {
+	ID       int
 	SubGraph *graph.SubGraph
 
 	Selections []*Selection
-	DependsOn  []*Step
+	DependsOn  []int
 
 	Status StepStatus
 	Err    error
@@ -87,10 +88,10 @@ func NewPlanner(superGraph *graph.SuperGraph) *planner {
 
 type Steps []*Step
 
-func (s Steps) findDependedStep(step *Step) []*Step {
+func (s Steps) findDependedStep(step *Step) []int {
 	dependKeys := step.findExtendKeys()
 
-	ret := make([]*Step, 0)
+	ret := make([]int, 0)
 	for _, st := range s {
 		if st == step {
 			continue
@@ -99,7 +100,7 @@ func (s Steps) findDependedStep(step *Step) []*Step {
 		for _, keys := range dependKeys {
 			for _, key := range keys {
 				if st.hasField(key) {
-					ret = append(ret, st)
+					ret = append(ret, st.ID)
 				}
 			}
 		}
@@ -189,15 +190,16 @@ func (p *planner) plan(keys []string) *Plan {
 		})
 	}
 
-	for _, step := range plan.Steps {
-		dependsOn := plan.Steps.findDependedStep(step)
-		step.DependsOn = dependsOn
-	}
+	p.solveDependency(plan)
 
 	return plan
 }
 
 func (p *planner) solveDependency(plan *Plan) {
+	for i, step := range plan.Steps {
+		step.ID = i
+	}
+
 	for _, step := range plan.Steps {
 		dependsOn := plan.Steps.findDependedStep(step)
 		step.DependsOn = dependsOn
