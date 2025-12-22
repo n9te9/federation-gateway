@@ -1,6 +1,7 @@
 package executor_test
 
 import (
+	"net/http"
 	"testing"
 
 	"github.com/n9te9/federation-gateway/federation/executor"
@@ -10,9 +11,10 @@ import (
 
 func TestExecutor_Execute(t *testing.T) {
 	tests := []struct {
-		name    string
-		plan    *planner.Plan
-		wantErr error
+		name       string
+		plan       *planner.Plan
+		httpClient *http.Client
+		wantErr    error
 	}{
 		{
 			name: "happy case: execute simple plan",
@@ -48,7 +50,6 @@ func TestExecutor_Execute(t *testing.T) {
 							},
 						},
 						DependsOn: []int{},
-						Status:    planner.Pending,
 						Err:       nil,
 						Done:      make(chan struct{}),
 					},
@@ -79,7 +80,6 @@ func TestExecutor_Execute(t *testing.T) {
 							},
 						},
 						DependsOn: []int{0},
-						Status:    planner.Pending,
 						Err:       nil,
 						Done:      make(chan struct{}),
 					},
@@ -91,8 +91,8 @@ func TestExecutor_Execute(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			e := executor.NewExecutor()
-			gotErr := e.Execute(tt.plan)
+			e := executor.NewExecutor(tt.httpClient)
+			gotErr := e.Execute(t.Context(), tt.plan)
 			if gotErr == nil && tt.wantErr == nil {
 				return
 			}

@@ -26,20 +26,7 @@ type Step struct {
 	DependsOn  []int
 	Done       chan struct{}
 
-	Status StepStatus
-	Err    error
-}
-
-func (s *Step) Run() {
-	s.Status = Running
-}
-
-func (s *Step) Complete() {
-	s.Status = Completed
-}
-
-func (s *Step) Fail() {
-	s.Status = Failed
+	Err error
 }
 
 func (s *Step) findExtendKeys() [][]string {
@@ -212,7 +199,6 @@ func (p *planner) plan(queryName string, keys []string) *Plan {
 			SubGraph:   subGraph,
 			Selections: sels,
 			DependsOn:  nil,
-			Status:     Pending,
 			Err:        nil,
 			Done:       make(chan struct{}),
 		})

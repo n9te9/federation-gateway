@@ -7,10 +7,10 @@ import (
 )
 
 type QueryBuilder interface {
-	Build(step *planner.Step, entities []Entity) (string, map[string]any, error)
+	Build(step *planner.Step, entities Entities) (string, map[string]any, error)
 }
 
-type Entity map[string]any
+type Entities []map[string]any
 
 type queryBuilder struct{}
 
@@ -18,7 +18,7 @@ func NewQueryBuilder() *queryBuilder {
 	return &queryBuilder{}
 }
 
-func (qb *queryBuilder) Build(step *planner.Step, entities []Entity) (string, map[string]any, error) {
+func (qb *queryBuilder) Build(step *planner.Step, entities Entities) (string, map[string]any, error) {
 	if step.SubGraph.IsBase {
 		return qb.buildBaseQuery(step)
 	}
@@ -26,7 +26,7 @@ func (qb *queryBuilder) Build(step *planner.Step, entities []Entity) (string, ma
 	return qb.buildFetchEntitiesQuery(step, entities)
 }
 
-func (qb *queryBuilder) buildFetchEntitiesQuery(step *planner.Step, entities []Entity) (string, map[string]any, error) {
+func (qb *queryBuilder) buildFetchEntitiesQuery(step *planner.Step, entities Entities) (string, map[string]any, error) {
 	var builder strings.Builder
 
 	builder.WriteString("query ($representations: [_Any!]!) {\n")
