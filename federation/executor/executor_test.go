@@ -46,7 +46,7 @@ func TestExecutor_Execute(t *testing.T) {
 
 						return &http.Response{
 							StatusCode: 200,
-							Body:       io.NopCloser(strings.NewReader(`{"data": {"products": [{"upc": "1", "name": "A"}]}}`)),
+							Body:       io.NopCloser(strings.NewReader(`{"data": {"products": [{"upc": "1", "name": "A"},{"upc": "2", "name": "B"}]}}`)),
 						}, nil
 					case "inventory.example.com":
 						reqBody, err := io.ReadAll(req.Body)
@@ -78,7 +78,7 @@ func TestExecutor_Execute(t *testing.T) {
 					products: [Product]
 				}
 				
-				type Product {
+				type Product @key(fields: "upc") {
 					upc: String!
 					name: String
 					price: Int
@@ -143,6 +143,10 @@ func TestExecutor_Execute(t *testing.T) {
 							map[string]any{
 								"upc":  "1",
 								"name": "A",
+							},
+							map[string]any{
+								"upc":  "2",
+								"name": "B",
 							},
 						},
 					},

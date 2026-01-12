@@ -5,10 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/n9te9/federation-gateway/federation/planner"
+	"github.com/n9te9/goliteql/schema"
 )
 
 type Executor interface {
@@ -57,6 +61,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan) ([]map[strin
 				}
 
 				paths := BuildPaths(resp["data"])
+				CollectEntityRefs(paths, resp["data"].(map[string]any), step.SubGraph.Schema)
 			} else {
 				newEntities, err := e.fetchEntities(step, resp)
 				if err != nil {
@@ -101,6 +106,10 @@ func (p Path) Merge() Path {
 	}
 
 	return merged
+}
+
+func (p Path) isKeySegment(keys []string) bool {
+	return slices.Contains(keys, p[len(p)-1].FieldName)
 }
 
 func BuildPaths(v any) []Path {
@@ -153,7 +162,98 @@ func (p Paths) Merge() Paths {
 type entityRef struct {
 	Typename string
 	Key      map[string]any
-	Path     []PathSegment
+	Path     Path
+}
+
+func CollectEntityRefs(paths Paths, obj map[string]any, s *schema.Schema) ([]entityRef, error) {
+	refs := make([]entityRef, 0)
+
+	for _, path := range paths {
+		var td *schema.TypeDefinition
+
+		if len(path) == 0 {
+			continue
+		}
+
+		segment := path[0]
+		td = getTypeFromOperation(segment, s)
+		if td == nil {
+			continue
+		}
+
+		keys := getKey(td.Directives)
+		if keys == nil {
+			continue
+		}
+
+		if !path.isKeySegment(keys) {
+			continue
+		}
+
+		keyValue := getObjectFromPath(path, obj)
+		entityRef := entityRef{
+			Typename: string(td.Name),
+			Key:      keyValue,
+			Path:     path,
+		}
+		refs = append(refs, entityRef)
+	}
+
+	fmt.Println(refs)
+
+	return refs, nil
+}
+
+func getKey(directives []*schema.Directive) []string {
+	for _, dir := range directives {
+		if string(dir.Name) == "key" {
+			for _, arg := range dir.Arguments {
+				if string(arg.Name) != "fields" {
+					continue
+				}
+
+				if len(dir.Arguments) == 0 {
+					return nil
+				}
+
+				v := strings.ReplaceAll(string(arg.Value), "\"", "")
+				return strings.Split(v, " ")
+			}
+		}
+	}
+
+	return nil
+}
+
+func getTypeFromOperation(segment *PathSegment, s *schema.Schema) *schema.TypeDefinition {
+	for _, operations := range s.Operations {
+		for _, field := range operations.Fields {
+			if string(field.Name) == segment.FieldName {
+				rootType := field.Type.GetRootType()
+				td := s.Indexes.TypeIndex[string(rootType.Name)]
+				return td
+			}
+		}
+	}
+
+	return nil
+}
+
+func getObjectFromPath(path Path, obj any) map[string]any {
+	switch v := obj.(type) {
+	case []any:
+		if path[0].Index != nil {
+			return getObjectFromPath(path[1:], v[*path[0].Index])
+		}
+	case map[string]any:
+		if len(path) == 1 {
+			return v
+		} else {
+			return getObjectFromPath(path, v[path[0].FieldName])
+		}
+	}
+
+	return nil
 }
 
 func (e *executor) waitDependStepEnded(plan *planner.Plan, step *planner.Step) {
