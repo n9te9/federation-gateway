@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -34,14 +33,35 @@ func NewExecutor(httpClient *http.Client) *executor {
 	}
 }
 
-func (e *executor) Execute(ctx context.Context, plan *planner.Plan) ([]map[string]any, error) {
+func (e *executor) Execute(ctx context.Context, plan *planner.Plan) (map[string]any, error) {
 	wg := sync.WaitGroup{}
 	entities := make(Entities, 0)
-	result := make([]map[string]any, 0)
+	stepInputs := sync.Map{}
+	mergedResponse := make(map[string]any)
 	for _, step := range plan.Steps {
 		wg.Add(1)
 		go func(step *planner.Step) {
 			e.waitDependStepEnded(plan, step)
+
+			var variables map[string]any
+			var currentRefs []entityRef
+
+			if !step.SubGraph.IsBase {
+				for _, dependStepID := range step.DependsOn {
+					value, ok := stepInputs.Load(dependStepID)
+					if ok {
+						currentRefs = value.([]entityRef)
+					} else {
+						step.Err = errors.New("no entity refs for dependent step")
+						close(step.Done)
+					}
+
+					entities = make(Entities, 0)
+					for _, ref := range currentRefs {
+						entities = append(entities, ref.toRepresentation())
+					}
+				}
+			}
 
 			query, variables, err := e.QueryBuilder.Build(step, entities)
 			if err != nil {
@@ -53,25 +73,42 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan) ([]map[strin
 				step.Err = err
 			}
 
-			e.mux.Lock()
 			if step.SubGraph.IsBase {
 				if resp["data"] == nil {
 					step.Err = errors.New("no data in response")
 					return
 				}
 
+				e.mux.Lock()
+				mergedResponse = resp
+				e.mux.Unlock()
+
 				paths := BuildPaths(resp["data"])
-				CollectEntityRefs(paths, resp["data"].(map[string]any), step.SubGraph.Schema)
-			} else {
-				newEntities, err := e.fetchEntities(step, resp)
+				refs, err := CollectEntityRefs(paths, resp["data"].(map[string]any), step.SubGraph.Schema)
 				if err != nil {
 					step.Err = err
+					close(step.Done)
 				}
-				entities = append(entities, newEntities...)
-			}
-			result = append(result, resp)
-			e.mux.Unlock()
+				stepInputs.Store(step.ID, refs)
+			} else {
+				value, ok := stepInputs.Load(step.DependsOn[0])
+				if ok {
+					currentRefs = value.([]entityRef)
+				} else {
+					step.Err = errors.New("no entity refs for dependent step")
+					close(step.Done)
+				}
 
+				entitiesData, ok := resp["data"].(map[string]any)["_entities"].([]any)
+				if ok {
+					e.mux.Lock()
+					defer e.mux.Unlock()
+					err := e.mergeEntitiesResponse(mergedResponse, currentRefs, entitiesData)
+					if err != nil {
+						step.Err = err
+					}
+				}
+			}
 			close(step.Done)
 
 			wg.Done()
@@ -79,7 +116,36 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan) ([]map[strin
 	}
 
 	wg.Wait()
-	return result, nil
+	return mergedResponse, nil
+}
+
+func (e *executor) mergeEntitiesResponse(resp map[string]any, refs []entityRef, entitiesData []any) error {
+	if len(refs) != len(entitiesData) {
+		return errors.New("mismatched number of entity refs and entities data")
+	}
+
+	data := resp["data"].(map[string]any)
+
+	for i, entityResult := range entitiesData {
+		if entityResult == nil {
+			continue
+		}
+
+		ref := refs[i]
+		resultMap, ok := entityResult.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		targetObj := getObjectFromPath(ref.Path, data)
+		if targetObj != nil {
+			for k, v := range resultMap {
+				targetObj[k] = v
+			}
+		}
+	}
+
+	return nil
 }
 
 type PathSegment struct {
@@ -165,6 +231,15 @@ type entityRef struct {
 	Path     Path
 }
 
+func (e entityRef) toRepresentation() map[string]any {
+	ret := make(map[string]any)
+	for k, v := range e.Key {
+		ret[k] = v
+	}
+	ret["__typename"] = e.Typename
+	return ret
+}
+
 func CollectEntityRefs(paths Paths, obj map[string]any, s *schema.Schema) ([]entityRef, error) {
 	refs := make([]entityRef, 0)
 
@@ -198,8 +273,6 @@ func CollectEntityRefs(paths Paths, obj map[string]any, s *schema.Schema) ([]ent
 		}
 		refs = append(refs, entityRef)
 	}
-
-	fmt.Println(refs)
 
 	return refs, nil
 }

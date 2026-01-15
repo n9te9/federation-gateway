@@ -24,7 +24,7 @@ func TestExecutor_Execute(t *testing.T) {
 		name       string
 		plan       *planner.Plan
 		httpClient *http.Client
-		want       []map[string]any
+		want       map[string]any
 		wantErr    error
 	}{
 		{
@@ -54,7 +54,7 @@ func TestExecutor_Execute(t *testing.T) {
 							return nil, err
 						}
 
-						wantQuery := `{"query":"query ($representations: [_Any!]!) {\n\t_entities(representations: $representations) {\n\t\t... on Product {\n\t\t\tweight\n\t\t\theight\n\t\t}\n\t}\n}","variables":{"representations":null}}`
+						wantQuery := `{"query":"query ($representations: [_Any!]!) {\n\t_entities(representations: $representations) {\n\t\t... on Product {\n\t\t\tweight\n\t\t\theight\n\t\t}\n\t}\n}","variables":{"representations":[{"__typename":"Product","name":"A","upc":"1"},{"__typename":"Product","name":"B","upc":"2"}]}}`
 
 						if string(reqBody) != wantQuery {
 							return nil, fmt.Errorf("want query: %s, got: %s", wantQuery, string(reqBody))
@@ -62,7 +62,7 @@ func TestExecutor_Execute(t *testing.T) {
 
 						return &http.Response{
 							StatusCode: 200,
-							Body:       io.NopCloser(strings.NewReader(`{"data": {"_entities": [{"weight": 10, "height": 20}]}}`)),
+							Body:       io.NopCloser(strings.NewReader(`{"data": {"_entities": [{"weight": 10.0, "height": 20.0}, null]}}`)),
 						}, nil
 					}
 
@@ -136,28 +136,18 @@ func TestExecutor_Execute(t *testing.T) {
 					},
 				},
 			},
-			want: []map[string]any{
-				{
-					"data": map[string]any{
-						"products": []any{
-							map[string]any{
-								"upc":  "1",
-								"name": "A",
-							},
-							map[string]any{
-								"upc":  "2",
-								"name": "B",
-							},
+			want: map[string]any{
+				"data": map[string]any{
+					"products": []any{
+						map[string]any{
+							"upc":    "1",
+							"name":   "A",
+							"weight": 10.0,
+							"height": 20.0,
 						},
-					},
-				},
-				{
-					"data": map[string]any{
-						"_entities": []any{
-							map[string]any{
-								"weight": float64(10),
-								"height": float64(20),
-							},
+						map[string]any{
+							"upc":  "2",
+							"name": "B",
 						},
 					},
 				},

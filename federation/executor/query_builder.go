@@ -47,12 +47,12 @@ func (qb *queryBuilder) buildFetchEntitiesQuery(step *planner.Step, entities Ent
 	builder.WriteString("\t}\n")
 	builder.WriteString("}")
 
-	var reps []any
+	var resp []any
 	for _, e := range entities {
-		reps = append(reps, e)
+		resp = append(resp, e)
 	}
 
-	return builder.String(), map[string]any{"representations": reps}, nil
+	return builder.String(), map[string]any{"representations": resp}, nil
 }
 
 func (qb *queryBuilder) buildBaseQuery(step *planner.Step) (string, map[string]any, error) {
