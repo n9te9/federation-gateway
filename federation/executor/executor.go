@@ -49,7 +49,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, vareiables m
 			var reqVariables map[string]any
 			var currentRefs []entityRef
 
-			if !step.SubGraph.IsBase {
+			if !step.IsBase {
 				for _, dependStepID := range step.DependsOn {
 					value, ok := stepInputs.Load(dependStepID)
 					if ok {
@@ -71,7 +71,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, vareiables m
 				step.Err = err
 			}
 
-			if step.SubGraph.IsBase {
+			if step.IsBase {
 				reqVariables = vareiables
 			} else {
 				reqVariables = builtVariables
@@ -82,7 +82,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, vareiables m
 				step.Err = err
 			}
 
-			if step.SubGraph.IsBase {
+			if step.IsBase {
 				if resp["data"] == nil {
 					step.Err = errors.New("no data in response")
 					return

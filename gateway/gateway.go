@@ -45,7 +45,7 @@ func NewGateway(settings *GatewaySetting) (*gateway, error) {
 		allSchemaSrc = append(allSchemaSrc, []byte(srv.Schema+"\n")...)
 	}
 
-	superGraph, err := graph.NewSuperGraph([]byte{}, subGraphs)
+	superGraph, err := graph.NewSuperGraph(allSchemaSrc, subGraphs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create supergraph: %w", err)
 	}
