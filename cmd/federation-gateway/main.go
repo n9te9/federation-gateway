@@ -35,4 +35,8 @@ func main() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(serveCmd)
+
+	if err := rootCmd.Execute(); err != nil {
+		panic(err)
+	}
 }
