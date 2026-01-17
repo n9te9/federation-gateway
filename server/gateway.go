@@ -88,7 +88,7 @@ func Run() {
 	}
 
 	srv := &http.Server{
-		Addr:    ":8081",
+		Addr:    fmt.Sprintf(":%d", settings.Port),
 		Handler: gw,
 	}
 

@@ -35,8 +35,8 @@ func main() {
 		http.Error(w, "query not supported", http.StatusBadRequest)
 	})
 
-	log.Println("Starting Inventory service on port 8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	log.Println("Starting Inventory service on port 8888")
+	if err := http.ListenAndServe(":8888", nil); err != nil {
 		log.Fatal(err)
 	}
 }

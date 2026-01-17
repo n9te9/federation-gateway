@@ -36,8 +36,8 @@ func main() {
 		http.Error(w, "query not supported", http.StatusBadRequest)
 	})
 
-	log.Println("Starting Product service on port 8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	log.Println("Starting Product service on port 8000")
+	if err := http.ListenAndServe(":8000", nil); err != nil {
 		log.Fatal(err)
 	}
 }
