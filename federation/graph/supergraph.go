@@ -14,12 +14,17 @@ type SuperGraph struct {
 	OwnershipMap map[string]*ownership
 }
 
-func NewSuperGraph(root *schema.Schema, subGraphs []*SubGraph) *SuperGraph {
+func NewSuperGraph(allSchemaSrc []byte, subGraphs []*SubGraph) (*SuperGraph, error) {
+	root, err := schema.NewParser(schema.NewLexer()).Parse(allSchemaSrc)
+	if err != nil {
+		return nil, err
+	}
+
 	return &SuperGraph{
 		Schema:       root,
 		SubGraphs:    subGraphs,
 		OwnershipMap: newOwnershipMapForSuperGraph(root),
-	}
+	}, nil
 }
 
 func NewSuperGraphFromBytes(src []byte) (*SuperGraph, error) {

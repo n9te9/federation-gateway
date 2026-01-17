@@ -15,7 +15,7 @@ import (
 )
 
 type Executor interface {
-	Execute(plan *planner.Plan) error
+	Execute(ctx context.Context, plan *planner.Plan, variables map[string]any) (map[string]any, error)
 }
 
 type executor struct {
@@ -23,6 +23,8 @@ type executor struct {
 	httpClient *http.Client
 	mux        sync.Mutex
 }
+
+var _ Executor = (*executor)(nil)
 
 func NewExecutor(httpClient *http.Client) *executor {
 	qb := NewQueryBuilder()
@@ -33,7 +35,7 @@ func NewExecutor(httpClient *http.Client) *executor {
 	}
 }
 
-func (e *executor) Execute(ctx context.Context, plan *planner.Plan) (map[string]any, error) {
+func (e *executor) Execute(ctx context.Context, plan *planner.Plan, vareiables map[string]any) (map[string]any, error) {
 	wg := sync.WaitGroup{}
 	entities := make(Entities, 0)
 	stepInputs := sync.Map{}
@@ -43,7 +45,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan) (map[string]
 		go func(step *planner.Step) {
 			e.waitDependStepEnded(plan, step)
 
-			var variables map[string]any
+			var reqVariables map[string]any
 			var currentRefs []entityRef
 
 			if !step.SubGraph.IsBase {
@@ -63,12 +65,18 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan) (map[string]
 				}
 			}
 
-			query, variables, err := e.QueryBuilder.Build(step, entities)
+			query, builtVariables, err := e.QueryBuilder.Build(step, entities)
 			if err != nil {
 				step.Err = err
 			}
 
-			resp, err := e.doRequest(ctx, step.SubGraph.Host, query, variables)
+			if step.SubGraph.IsBase {
+				reqVariables = vareiables
+			} else {
+				reqVariables = builtVariables
+			}
+
+			resp, err := e.doRequest(ctx, step.SubGraph.Host, query, reqVariables)
 			if err != nil {
 				step.Err = err
 			}
