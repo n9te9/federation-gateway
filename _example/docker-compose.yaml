@@ -1,0 +1,9 @@
+services:
+  product:
+    build: 
+      context: ./product 
+      dockerfile: Dockerfile
+  inventory:
+    build: 
+      context: ./inventory 
+      dockerfile: Dockerfile
