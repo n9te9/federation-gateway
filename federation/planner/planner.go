@@ -148,23 +148,21 @@ func (p *planner) Plan(doc *query.Document) (*Plan, error) {
 
 	var rootSelections []*Selection
 	for _, sel := range op.Selections {
-		f, ok := sel.(*query.Field)
-		if !ok {
-			continue
-		}
+		switch f := sel.(type) {
+		case *query.Field:
+			if string(f.Name) != string(queryField.Name) {
+				continue
+			}
 
-		if string(f.Name) != string(queryField.Name) {
-			continue
+			rootSelections = append(rootSelections, &Selection{
+				ParentType:    string(schemaTypeDefinition.Name),
+				Field:         string(f.Name),
+				SubSelections: selections,
+			})
 		}
-
-		rootSelections = append(rootSelections, &Selection{
-			ParentType:    string(schemaTypeDefinition.Name),
-			Field:         string(f.Name),
-			SubSelections: selections,
-		})
 	}
 
-	keys := p.generateFieldKeys(schemaTypeDefinition, queryField)
+	keys := p.generateFieldKeys(string(schemaTypeDefinition.Name), queryField)
 
 	return p.plan(string(queryField.Name), keys, schemaTypeDefinition, rootSelections), nil
 }
@@ -172,30 +170,34 @@ func (p *planner) Plan(doc *query.Document) (*Plan, error) {
 func (p *planner) extractSelections(selection []query.Selection, parentType string) ([]*Selection, error) {
 	ret := make([]*Selection, 0)
 	for _, sel := range selection {
-		f, ok := sel.(*query.Field)
-		if !ok {
-			continue
-		}
-
-		selection := &Selection{
-			ParentType: parentType,
-			Field:      string(f.Name),
-		}
-
-		fieldTypeName, err := p.getFieldTypeName(parentType, string(f.Name))
-		if err != nil {
-			return nil, err
-		}
-
-		if len(f.Selections) > 0 {
-			subs, err := p.extractSelections(f.Selections, fieldTypeName)
+		switch f := sel.(type) {
+		case *query.Field:
+			fieldTypeName, err := p.getFieldTypeName(parentType, string(f.Name))
 			if err != nil {
 				return nil, err
 			}
-			selection.SubSelections = subs
-		}
+			selection := &Selection{
+				ParentType: parentType,
+				Field:      string(f.Name),
+			}
 
-		ret = append(ret, selection)
+			if len(f.Selections) > 0 {
+				subs, err := p.extractSelections(f.Selections, fieldTypeName)
+				if err != nil {
+					return nil, err
+				}
+				selection.SubSelections = subs
+			}
+			ret = append(ret, selection)
+		case *query.InlineFragment:
+			typeCondition := string(f.TypeCondition)
+			subs, err := p.extractSelections(f.Selections, typeCondition)
+			if err != nil {
+				return nil, err
+			}
+
+			ret = append(ret, subs...)
+		}
 	}
 
 	return ret, nil
@@ -247,15 +249,23 @@ func (p *planner) findOperationField(op *query.Operation) (*schema.TypeDefinitio
 	return nil, nil, errors.New("not found query operation")
 }
 
-func (p *planner) generateFieldKeys(typeDefinition *schema.TypeDefinition, field *query.Field) []string {
+func (p *planner) generateFieldKeys(typeDefinitionName string, field *query.Field) []string {
+	if len(field.Selections) == 0 {
+		return []string{fmt.Sprintf("%s.%s", typeDefinitionName, field.Name)}
+	}
+
 	ret := make([]string, 0)
 	for _, sel := range field.Selections {
-		f, ok := sel.(*query.Field)
-		if !ok {
-			continue
+		switch f := sel.(type) {
+		case *query.Field:
+			ret = append(ret, fmt.Sprintf("%s.%s", typeDefinitionName, f.Name))
+		case *query.InlineFragment:
+			for _, subSel := range f.Selections {
+				if subField, ok := subSel.(*query.Field); ok {
+					ret = append(ret, p.generateFieldKeys(string(f.TypeCondition), subField)...)
+				}
+			}
 		}
-
-		ret = append(ret, fmt.Sprintf("%s.%s", typeDefinition.Name, f.Name))
 	}
 
 	return ret
