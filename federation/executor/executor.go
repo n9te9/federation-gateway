@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -44,6 +45,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 	entities := make(Entities, 0)
 	stepInputs := sync.Map{}
 	mergedResponse := make(map[string]any)
+
 	for _, step := range plan.Steps {
 		wg.Add(1)
 		go func(step *planner.Step) {
@@ -55,25 +57,36 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 			var currentRefs []entityRef
 
 			if !step.IsBase {
+				targetTypes := make(map[string]struct{})
+				for _, sel := range step.Selections {
+					targetTypes[sel.ParentType] = struct{}{}
+				}
+
 				for _, dependStepID := range step.DependsOn {
 					value, ok := stepInputs.Load(dependStepID)
 					if ok {
-						currentRefs = value.([]entityRef)
+						refs := value.([]entityRef)
+						for _, ref := range refs {
+							if _, isTarget := targetTypes[ref.Typename]; isTarget {
+								currentRefs = append(currentRefs, ref)
+							}
+						}
 					} else {
 						step.Err = errors.New("no entity refs for dependent step")
 						return
 					}
+				}
 
-					entities = make(Entities, 0)
-					for _, ref := range currentRefs {
-						entities = append(entities, ref.toRepresentation())
-					}
+				entities = make(Entities, 0)
+				for _, ref := range currentRefs {
+					entities = append(entities, ref.toRepresentation())
 				}
 			}
 
 			query, builtVariables, err := e.QueryBuilder.Build(step, entities)
 			if err != nil {
 				step.Err = err
+				return
 			}
 
 			if step.IsBase {
@@ -85,6 +98,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 			resp, err := e.doRequest(ctx, step.SubGraph.Host, query, reqVariables)
 			if err != nil {
 				step.Err = err
+				return
 			}
 
 			if step.IsBase {
@@ -98,18 +112,16 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 				e.mux.Unlock()
 
 				paths := BuildPaths(resp["data"])
-				refs, err := CollectEntityRefs(paths, resp["data"].(map[string]any), step.SubGraph.Schema)
+				refs, err := CollectEntityRefs(paths, resp["data"].(map[string]any), e.superGraph.Schema)
 				if err != nil {
 					step.Err = err
 					return
 				}
 				stepInputs.Store(step.ID, refs)
+
 			} else {
 				for _, dependStepID := range step.DependsOn {
-					value, ok := stepInputs.Load(dependStepID)
-					if ok {
-						currentRefs = value.([]entityRef)
-					} else {
+					if _, ok := stepInputs.Load(dependStepID); !ok {
 						step.Err = errors.New("no entity refs for dependent step")
 						return
 					}
@@ -123,11 +135,24 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 				entitiesData, ok := data["_entities"].([]any)
 				if ok {
 					e.mux.Lock()
-					defer e.mux.Unlock()
 					err := e.mergeEntitiesResponse(mergedResponse, currentRefs, entitiesData)
 					if err != nil {
+						e.mux.Unlock()
 						step.Err = err
+						return
 					}
+
+					mergedData := mergedResponse["data"]
+					paths := BuildPaths(mergedData)
+					newRefs, err := CollectEntityRefs(paths, mergedData.(map[string]any), e.superGraph.Schema)
+					e.mux.Unlock()
+
+					if err != nil {
+						step.Err = err
+						return
+					}
+
+					stepInputs.Store(step.ID, newRefs)
 				}
 			}
 		}(step)
@@ -135,12 +160,18 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 
 	wg.Wait()
 
+	for _, step := range plan.Steps {
+		if step.Err != nil {
+			return nil, step.Err
+		}
+	}
+
 	return e.pruneResponse(mergedResponse, plan.RootSelections)
 }
 
 func (e *executor) mergeEntitiesResponse(resp map[string]any, refs []entityRef, entitiesData []any) error {
 	if len(refs) != len(entitiesData) {
-		return errors.New("mismatched number of entity refs and entities data")
+		return fmt.Errorf("mismatched number of entity refs (%d) and entities data (%d)", len(refs), len(entitiesData))
 	}
 
 	data := resp["data"].(map[string]any)
@@ -158,8 +189,13 @@ func (e *executor) mergeEntitiesResponse(resp map[string]any, refs []entityRef, 
 
 		targetObj := getObjectFromPath(ref.Path, data)
 		if targetObj != nil {
+			targetObjMap, ok := targetObj.(map[string]any)
+			if !ok {
+				continue
+			}
+
 			for k, v := range resultMap {
-				targetObj[k] = v
+				targetObjMap[k] = v
 			}
 		}
 	}
@@ -298,54 +334,17 @@ func (p Paths) Merge() Paths {
 
 type entityRef struct {
 	Typename string
-	Key      map[string]any
+	Key      any
 	Path     Path
 }
 
 func (e entityRef) toRepresentation() map[string]any {
 	ret := make(map[string]any)
-	for k, v := range e.Key {
+	for k, v := range e.Key.(map[string]any) {
 		ret[k] = v
 	}
 	ret["__typename"] = e.Typename
 	return ret
-}
-
-func CollectEntityRefs(paths Paths, obj map[string]any, s *schema.Schema) ([]entityRef, error) {
-	refs := make([]entityRef, 0)
-
-	for _, path := range paths {
-		var td *schema.TypeDefinition
-
-		if len(path) == 0 {
-			continue
-		}
-
-		segment := path[0]
-		td = getTypeFromOperation(segment, s)
-		if td == nil {
-			continue
-		}
-
-		keys := getKey(td.Directives)
-		if keys == nil {
-			continue
-		}
-
-		if !path.isKeySegment(keys) {
-			continue
-		}
-
-		keyValue := getObjectFromPath(path, obj)
-		entityRef := entityRef{
-			Typename: string(td.Name),
-			Key:      keyValue,
-			Path:     path,
-		}
-		refs = append(refs, entityRef)
-	}
-
-	return refs, nil
 }
 
 func getKey(directives []*schema.Directive) []string {
@@ -363,37 +362,6 @@ func getKey(directives []*schema.Directive) []string {
 				v := strings.ReplaceAll(string(arg.Value), "\"", "")
 				return strings.Split(v, " ")
 			}
-		}
-	}
-
-	return nil
-}
-
-func getTypeFromOperation(segment *PathSegment, s *schema.Schema) *schema.TypeDefinition {
-	for _, operations := range s.Operations {
-		for _, field := range operations.Fields {
-			if string(field.Name) == segment.FieldName {
-				rootType := field.Type.GetRootType()
-				td := s.Indexes.TypeIndex[string(rootType.Name)]
-				return td
-			}
-		}
-	}
-
-	return nil
-}
-
-func getObjectFromPath(path Path, obj any) map[string]any {
-	switch v := obj.(type) {
-	case []any:
-		if path[0].Index != nil {
-			return getObjectFromPath(path[1:], v[*path[0].Index])
-		}
-	case map[string]any:
-		if len(path) == 1 {
-			return v
-		} else {
-			return getObjectFromPath(path, v[path[0].FieldName])
 		}
 	}
 
@@ -460,4 +428,173 @@ func (e *executor) fetchEntities(step *planner.Step, resp map[string]any) (Entit
 	}
 
 	return result, nil
+}
+
+func getObjectFromPath(path Path, obj any) any {
+	if obj == nil {
+		return nil
+	}
+
+	if len(path) == 0 {
+		return obj
+	}
+
+	segment := path[0]
+	var currentObj = obj
+	if segment.FieldName != "" {
+		if m, ok := currentObj.(map[string]any); ok {
+			if val, exists := m[segment.FieldName]; exists {
+				currentObj = val
+			} else {
+				return nil
+			}
+		} else {
+			return nil
+		}
+	}
+
+	if segment.Index != nil {
+		if s, ok := currentObj.([]any); ok {
+			idx := *segment.Index
+			if idx >= 0 && idx < len(s) {
+				currentObj = s[idx]
+			} else {
+				return nil
+			}
+		} else {
+			return nil
+		}
+	}
+
+	return getObjectFromPath(path[1:], currentObj)
+}
+
+func pathToString(path Path) string {
+	var sb strings.Builder
+	for _, seg := range path {
+		sb.WriteString(seg.FieldName)
+		if seg.Index != nil {
+			sb.WriteString(fmt.Sprintf("[%d]", *seg.Index))
+		}
+		sb.WriteString("/")
+	}
+	return sb.String()
+}
+
+func getTypeDefinitionFromPath(path Path, s *schema.Schema) *schema.TypeDefinition {
+	if len(path) == 0 {
+		return nil
+	}
+
+	var currentTD *schema.TypeDefinition
+	for _, op := range s.Operations {
+		for _, f := range op.Fields {
+			if string(f.Name) == path[0].FieldName {
+				currentTD = s.Indexes.TypeIndex[string(f.Type.GetRootType().Name)]
+				break
+			}
+		}
+		if currentTD != nil {
+			break
+		}
+	}
+
+	if currentTD == nil {
+		return nil
+	}
+
+	currentTypeName := string(currentTD.Name)
+
+	for _, seg := range path[1:] {
+		if seg.FieldName == "" {
+			continue
+		}
+
+		td, ok := s.Indexes.TypeIndex[currentTypeName]
+		if !ok {
+			return nil
+		}
+
+		var nextType *schema.TypeDefinition
+		for _, f := range td.Fields {
+			if string(f.Name) == seg.FieldName {
+				nextType = s.Indexes.TypeIndex[string(f.Type.GetRootType().Name)]
+				break
+			}
+		}
+
+		if nextType == nil {
+			return nil
+		}
+
+		currentTD = nextType
+		currentTypeName = string(nextType.Name)
+	}
+
+	return currentTD
+}
+
+func CollectEntityRefs(paths Paths, obj map[string]any, s *schema.Schema) ([]entityRef, error) {
+	refs := make([]entityRef, 0)
+	seenPaths := make(map[string]struct{})
+
+	for _, path := range paths {
+		if len(path) == 0 {
+			continue
+		}
+
+		parentPath := path[:len(path)-1]
+		if len(parentPath) == 0 {
+			continue
+		}
+
+		td := getTypeDefinitionFromPath(parentPath, s)
+		if td == nil {
+			continue
+		}
+
+		keys := getKey(td.Directives)
+		if len(keys) == 0 {
+			continue
+		}
+
+		leafSegment := path[len(path)-1]
+		if !slices.Contains(keys, leafSegment.FieldName) {
+			continue
+		}
+
+		pathKey := pathToString(parentPath)
+		if _, exists := seenPaths[pathKey]; exists {
+			continue
+		}
+		seenPaths[pathKey] = struct{}{}
+
+		parentObj := getObjectFromPath(parentPath, obj)
+		parentMap, ok := parentObj.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		keyMap := make(map[string]any)
+		missingKey := false
+		for _, k := range keys {
+			if val, ok := parentMap[k]; ok {
+				keyMap[k] = val
+			} else {
+				missingKey = true
+				break
+			}
+		}
+		if missingKey {
+			continue
+		}
+
+		refs = append(refs, entityRef{
+			Typename: string(td.Name),
+			Key:      keyMap,
+			Path:     parentPath,
+		})
+	}
+
+	return refs, nil
 }

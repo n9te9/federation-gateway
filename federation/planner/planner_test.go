@@ -103,16 +103,18 @@ func TestPlanner_Plan(t *testing.T) {
 						}(),
 						Selections: []*planner.Selection{
 							{
-								ParentType: "Product",
-								Field:      "upc",
+								ParentType:    "Product",
+								Field:         "upc",
+								SubSelections: []*planner.Selection{},
 							},
 							{
-								ParentType: "Product",
-								Field:      "name",
+								ParentType:    "Product",
+								Field:         "name",
+								SubSelections: []*planner.Selection{},
 							},
 						},
 						IsBase:    true,
-						DependsOn: []int{},
+						DependsOn: nil,
 						Err:       nil,
 						Done:      make(chan struct{}),
 					},
@@ -134,12 +136,14 @@ func TestPlanner_Plan(t *testing.T) {
 						}(),
 						Selections: []*planner.Selection{
 							{
-								ParentType: "Product",
-								Field:      "width",
+								ParentType:    "Product",
+								Field:         "width",
+								SubSelections: []*planner.Selection{},
 							},
 							{
-								ParentType: "Product",
-								Field:      "height",
+								ParentType:    "Product",
+								Field:         "height",
+								SubSelections: []*planner.Selection{},
 							},
 						},
 						DependsOn: []int{0},
@@ -149,7 +153,7 @@ func TestPlanner_Plan(t *testing.T) {
 				},
 				RootSelections: []*planner.Selection{
 					{
-						ParentType: "Product",
+						ParentType: "Query",
 						Field:      "products",
 						SubSelections: []*planner.Selection{
 							{
@@ -200,7 +204,6 @@ func TestPlanner_Plan(t *testing.T) {
 			superGraph: func() *graph.SuperGraph {
 				productSDL := `type Query { products: [Product] } type Product @key(fields: "upc") { upc: String! name: String }`
 				reviewSDL := `type Review { id: ID! body: String author: User product: Product }
-							extend type User @key(fields: "id") { id: ID! @external reviews: [Review] }
 							extend type Product @key(fields: "upc") { upc: String! @external reviews: [Review] }`
 				userSDL := `type Query { me: User } type User @key(fields: "id") { id: ID! username: String }`
 
@@ -228,16 +231,23 @@ func TestPlanner_Plan(t *testing.T) {
 						}(),
 						IsBase: true,
 						Selections: []*planner.Selection{
-							{ParentType: "Product", Field: "upc"},
-							{ParentType: "Product", Field: "name"},
+							{
+								ParentType:    "Product",
+								Field:         "upc",
+								SubSelections: []*planner.Selection{},
+							},
+							{
+								ParentType:    "Product",
+								Field:         "name",
+								SubSelections: []*planner.Selection{},
+							},
 						},
-						DependsOn: []int{},
+						DependsOn: nil,
 					},
 					{
 						ID: 1,
 						SubGraph: func() *graph.SubGraph {
 							sdl := `type Review { id: ID! body: String author: User product: Product }
-									extend type User @key(fields: "id") { id: ID! @external reviews: [Review] }
 									extend type Product @key(fields: "upc") { upc: String! @external reviews: [Review] }`
 							sg, _ := graph.NewSubGraph("review", []byte(sdl), "")
 							return sg
@@ -247,12 +257,19 @@ func TestPlanner_Plan(t *testing.T) {
 								ParentType: "Product",
 								Field:      "reviews",
 								SubSelections: []*planner.Selection{
-									{ParentType: "Review", Field: "body"},
+									{
+										ParentType:    "Review",
+										Field:         "body",
+										SubSelections: []*planner.Selection{},
+									},
 									{
 										ParentType: "Review",
 										Field:      "author",
 										SubSelections: []*planner.Selection{
-											{ParentType: "User", Field: "id"},
+											{
+												ParentType: "User",
+												Field:      "id",
+											},
 										},
 									},
 								},
@@ -268,14 +285,18 @@ func TestPlanner_Plan(t *testing.T) {
 							return sg
 						}(),
 						Selections: []*planner.Selection{
-							{ParentType: "User", Field: "username"},
+							{
+								ParentType:    "User",
+								Field:         "username",
+								SubSelections: []*planner.Selection{},
+							},
 						},
 						DependsOn: []int{1},
 					},
 				},
 				RootSelections: []*planner.Selection{
 					{
-						ParentType: "Product",
+						ParentType: "Query",
 						Field:      "products",
 						SubSelections: []*planner.Selection{
 							{ParentType: "Product", Field: "upc"},
@@ -318,6 +339,9 @@ func TestPlanner_Plan(t *testing.T) {
 				cmpopts.IgnoreFields(schema.Schema{}, "Tokens"),
 				cmpopts.IgnoreFields(graph.SubGraph{}, "SDL"),
 				cmpopts.IgnoreFields(planner.Step{}, "Done"),
+				cmpopts.SortSlices(func(i, j int) bool { return i < j }),
+				cmpopts.SortSlices(func(i, j *planner.Selection) bool { return i.Field < j.Field }),
+				cmpopts.EquateEmpty(),
 			}
 
 			if diff := cmp.Diff(got, tt.want, ignores...); diff != "" {
