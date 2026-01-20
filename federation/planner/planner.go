@@ -30,36 +30,6 @@ type Step struct {
 	Err error
 }
 
-func (s *Step) findExtendKeys() [][]string {
-	for _, ext := range s.SubGraph.Schema.Extends {
-		switch t := ext.(type) {
-		case *schema.TypeDefinition:
-			directives := schema.Directives(t.Directives)
-			keyDirective := directives.Get([]byte("key"))
-			if keyDirective == nil {
-				return nil
-			}
-
-			return s.findKeyDirectiveFieldArguments(keyDirective.Arguments)
-		}
-	}
-
-	return nil
-}
-
-func (s *Step) findKeyDirectiveFieldArguments(keyDirectiveArgs []*schema.DirectiveArgument) [][]string {
-	ret := make([][]string, 0)
-	for _, arg := range keyDirectiveArgs {
-		if string(arg.Name) == "fields" {
-			v := strings.Trim(string(arg.Value), `"`)
-			keys := strings.Split(v, " ")
-			ret = append(ret, keys)
-		}
-	}
-
-	return ret
-}
-
 func (s *Step) hasField(fieldName string) bool {
 	for _, t := range s.SubGraph.Schema.Types {
 		for _, field := range t.Fields {
@@ -89,22 +59,10 @@ func NewPlanner(superGraph *graph.SuperGraph) *planner {
 
 type Steps []*Step
 
-func (s Steps) findDependedStep(step *Step) []int {
-	dependKeys := step.findExtendKeys()
-
-	ret := make([]int, 0)
-	for _, st := range s {
-		if st == step {
-			continue
-		}
-
-		for _, keys := range dependKeys {
-			for _, key := range keys {
-				if st.hasField(key) {
-					ret = append(ret, st.ID)
-				}
-			}
-		}
+func (s Steps) IDs() []int {
+	ret := make([]int, 0, len(s))
+	for _, step := range s {
+		ret = append(ret, step.ID)
 	}
 
 	return ret
@@ -146,6 +104,22 @@ func (p *planner) Plan(doc *query.Document) (*Plan, error) {
 		return nil, err
 	}
 
+	var rootTypeName string
+	switch op.OperationType {
+	case query.QueryOperation:
+		rootTypeName = "Query"
+	case query.MutationOperation:
+		rootTypeName = "Mutation"
+	case query.SubscriptionOperation:
+		rootTypeName = "Subscription"
+	}
+
+	if p.superGraph.Schema.Definition != nil {
+		if op.OperationType == query.QueryOperation && len(p.superGraph.Schema.Definition.Query) > 0 {
+			rootTypeName = string(p.superGraph.Schema.Definition.Query)
+		}
+	}
+
 	var rootSelections []*Selection
 	for _, sel := range op.Selections {
 		switch f := sel.(type) {
@@ -155,16 +129,16 @@ func (p *planner) Plan(doc *query.Document) (*Plan, error) {
 			}
 
 			rootSelections = append(rootSelections, &Selection{
-				ParentType:    string(schemaTypeDefinition.Name),
+				ParentType:    rootTypeName,
 				Field:         string(f.Name),
 				SubSelections: selections,
 			})
 		}
 	}
 
-	keys := p.generateFieldKeys(string(schemaTypeDefinition.Name), queryField)
+	plan := p.plan(string(queryField.Name), schemaTypeDefinition, rootSelections)
 
-	return p.plan(string(queryField.Name), keys, schemaTypeDefinition, rootSelections), nil
+	return plan, nil
 }
 
 func (p *planner) extractSelections(selection []query.Selection, parentType string) ([]*Selection, error) {
@@ -176,6 +150,7 @@ func (p *planner) extractSelections(selection []query.Selection, parentType stri
 			if err != nil {
 				return nil, err
 			}
+
 			selection := &Selection{
 				ParentType: parentType,
 				Field:      string(f.Name),
@@ -249,28 +224,6 @@ func (p *planner) findOperationField(op *query.Operation) (*schema.TypeDefinitio
 	return nil, nil, errors.New("not found query operation")
 }
 
-func (p *planner) generateFieldKeys(typeDefinitionName string, field *query.Field) []string {
-	if len(field.Selections) == 0 {
-		return []string{fmt.Sprintf("%s.%s", typeDefinitionName, field.Name)}
-	}
-
-	ret := make([]string, 0)
-	for _, sel := range field.Selections {
-		switch f := sel.(type) {
-		case *query.Field:
-			ret = append(ret, fmt.Sprintf("%s.%s", typeDefinitionName, f.Name))
-		case *query.InlineFragment:
-			for _, subSel := range f.Selections {
-				if subField, ok := subSel.(*query.Field); ok {
-					ret = append(ret, p.generateFieldKeys(string(f.TypeCondition), subField)...)
-				}
-			}
-		}
-	}
-
-	return ret
-}
-
 type Selection struct {
 	ParentType string
 	Field      string
@@ -278,10 +231,39 @@ type Selection struct {
 	SubSelections []*Selection
 }
 
-func (p *planner) plan(queryName string, keys []string, typeDefinition *schema.TypeDefinition, rootSelections []*Selection) *Plan {
+func (p *planner) plan(queryName string, typeDefinition *schema.TypeDefinition, rootSelections []*Selection) *Plan {
 	plan := &Plan{
 		Steps:          make([]*Step, 0),
 		RootSelections: rootSelections,
+	}
+
+	var walk func(sels []*Selection, subGraph *graph.SubGraph) []*Selection
+	walk = func(sels []*Selection, subGraph *graph.SubGraph) []*Selection {
+		ret := make([]*Selection, 0)
+		for _, sel := range sels {
+			switch sel.ParentType {
+			case "mutation":
+				// TODO: implement for mutation
+			case "subscription":
+				// TODO: implement for subscription
+			}
+
+			subSelections := walk(sel.SubSelections, subGraph)
+
+			key := fmt.Sprintf("%s.%s", sel.ParentType, sel.Field)
+			if _, ok := subGraph.OwnershipFieldMap()[key]; ok {
+				selection := &Selection{
+					ParentType:    sel.ParentType,
+					Field:         sel.Field,
+					SubSelections: subSelections,
+				}
+				ret = append(ret, selection)
+			} else {
+				ret = append(ret, subSelections...)
+			}
+		}
+
+		return ret
 	}
 
 	for _, subGraph := range p.superGraph.SubGraphs {
@@ -291,20 +273,7 @@ func (p *planner) plan(queryName string, keys []string, typeDefinition *schema.T
 			subGraph.BaseName = queryName
 		}
 
-		sels := make([]*Selection, 0)
-		for _, key := range keys {
-			if _, exist := subGraph.OwnershipFieldMap()[key]; exist {
-				parts := strings.SplitN(key, ".", 2)
-				parentType := parts[0]
-				field := parts[1]
-
-				sels = append(sels, &Selection{
-					ParentType: parentType,
-					Field:      field,
-				})
-			}
-		}
-
+		sels := walk(rootSelections, subGraph)
 		if len(sels) == 0 && !isBase {
 			continue
 		}
@@ -330,7 +299,169 @@ func (p *planner) solveDependency(plan *Plan) {
 	}
 
 	for _, step := range plan.Steps {
-		dependsOn := plan.Steps.findDependedStep(step)
-		step.DependsOn = dependsOn
+		p.solveStepDependency(plan.Steps, step)
 	}
+}
+
+func (p *planner) solveStepDependency(steps Steps, targetStep *Step) {
+	requiredKeysMap := p.findRequiredKeys(targetStep)
+	if len(requiredKeysMap) == 0 {
+		return
+	}
+
+	for typeName, keys := range requiredKeysMap {
+		for _, key := range keys {
+			for _, providerStep := range steps {
+				if targetStep == providerStep {
+					continue
+				}
+
+				if providerStep.hasField(key) {
+					updatedSelections, injected := p.injectKey(providerStep.Selections, typeName, key)
+
+					if injected {
+						providerStep.Selections = updatedSelections
+
+						exists := false
+						for _, id := range targetStep.DependsOn {
+							if id == providerStep.ID {
+								exists = true
+								break
+							}
+						}
+						if !exists {
+							targetStep.DependsOn = append(targetStep.DependsOn, providerStep.ID)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func (p *planner) findRequiredKeys(step *Step) map[string][]string {
+	required := make(map[string][]string)
+
+	var traverse func(sels []*Selection)
+	traverse = func(sels []*Selection) {
+		for _, sel := range sels {
+			keys := p.getEntityKeys(step.SubGraph, sel.ParentType)
+			if len(keys) > 0 {
+				if _, ok := required[sel.ParentType]; !ok {
+					required[sel.ParentType] = make([]string, 0)
+				}
+				required[sel.ParentType] = append(required[sel.ParentType], keys...)
+			}
+
+			if len(sel.SubSelections) > 0 {
+				traverse(sel.SubSelections)
+			}
+		}
+	}
+	traverse(step.Selections)
+
+	return required
+}
+
+func (p *planner) getEntityKeys(subGraph *graph.SubGraph, typeName string) []string {
+	extract := func(dirs []*schema.Directive) []string {
+		directives := schema.Directives(dirs)
+		if keyDir := directives.Get([]byte("key")); keyDir != nil {
+			return p.findKeyDirectiveFieldArguments(keyDir.Arguments)[0]
+		}
+		return nil
+	}
+
+	if t, ok := subGraph.Schema.Indexes.TypeIndex[typeName]; ok {
+		if keys := extract(t.Directives); keys != nil {
+			return keys
+		}
+	}
+	for _, ext := range subGraph.Schema.Extends {
+		if t, ok := ext.(*schema.TypeDefinition); ok {
+			if string(t.Name) == typeName {
+				if keys := extract(t.Directives); keys != nil {
+					return keys
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (p *planner) findKeyDirectiveFieldArguments(keyDirectiveArgs []*schema.DirectiveArgument) [][]string {
+	ret := make([][]string, 0)
+	for _, arg := range keyDirectiveArgs {
+		if string(arg.Name) == "fields" {
+			v := strings.Trim(string(arg.Value), `"`)
+			keys := strings.Split(v, " ")
+			ret = append(ret, keys)
+		}
+	}
+
+	return ret
+}
+
+func (p *planner) injectKey(selections []*Selection, targetTypeName string, keyField string) ([]*Selection, bool) {
+	injected := false
+
+	isTargetContext := false
+	for _, sel := range selections {
+		if sel.ParentType == targetTypeName {
+			isTargetContext = true
+			break
+		}
+	}
+
+	if isTargetContext {
+		exists := false
+		for _, sel := range selections {
+			if sel.Field == keyField {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			selections = append(selections, &Selection{
+				ParentType: targetTypeName,
+				Field:      keyField,
+			})
+		}
+		injected = true
+	}
+
+	for _, sel := range selections {
+		fieldTypeName, err := p.getFieldTypeName(sel.ParentType, sel.Field)
+		if err != nil {
+			continue
+		}
+
+		if fieldTypeName == targetTypeName {
+			exists := false
+			for _, sub := range sel.SubSelections {
+				if sub.Field == keyField {
+					exists = true
+					break
+				}
+			}
+
+			if !exists {
+				sel.SubSelections = append(sel.SubSelections, &Selection{
+					ParentType: targetTypeName,
+					Field:      keyField,
+				})
+			}
+			injected = true
+		}
+
+		if len(sel.SubSelections) > 0 {
+			updatedSubs, subInjected := p.injectKey(sel.SubSelections, targetTypeName, keyField)
+			if subInjected {
+				sel.SubSelections = updatedSubs
+				injected = true
+			}
+		}
+	}
+
+	return selections, injected
 }
