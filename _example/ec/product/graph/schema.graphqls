@@ -1,0 +1,11 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@external", "@requires", "@provides", "@shareable"])
+
+type Product @key(fields: "upc") {
+  upc: String!
+  name: String
+  price: Float
+}
+type Query {
+  products: [Product]
+}

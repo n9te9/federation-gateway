@@ -5,7 +5,7 @@ enable_complement_request_id: false
 enable_hang_over_request_header: true
 services:
   - name: products
-    host: http://localhost:8000
+    host: http://localhost:8000/query
     schema: |
       type Product @key(fields: "upc") {
         upc: String!
@@ -16,7 +16,7 @@ services:
         products: [Product]
       }
   - name: inventory
-    host: http://localhost:8888
+    host: http://localhost:8888/query
     schema: |
       extend type Product @key(fields: "upc") {
         upc: String! @external
