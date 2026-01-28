@@ -23,7 +23,7 @@ func NewSuperGraph(allSchemaSrc []byte, subGraphs []*SubGraph) (*SuperGraph, err
 	superGraph := &SuperGraph{
 		Schema:       root,
 		SubGraphs:    make([]*SubGraph, 0, len(subGraphs)),
-		OwnershipMap: newOwnershipMapForSuperGraph(root),
+		OwnershipMap: make(map[string]*ownership),
 	}
 
 	for _, sg := range subGraphs {
@@ -70,7 +70,8 @@ func (sg *SuperGraph) UpdateOwnershipMap(subGraph *SubGraph) error {
 	subGraphOwnershipMap := subGraph.OwnershipFieldMap()
 
 	for k, v := range subGraphOwnershipMap {
-		if _, exists := sg.OwnershipMap[k]; exists {
+		_, exists := sg.OwnershipMap[k]
+		if exists {
 			return errors.New("ownership conflict for field " + k)
 		}
 
