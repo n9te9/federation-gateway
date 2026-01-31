@@ -8,7 +8,7 @@ package graph
 import (
 	"context"
 
-	"github.com/n9te9/federation-gateway/_example/ec/product/graph/model"
+	"github.com/n9te9/go-graphql-federation-gateway/_example/ec/product/graph/model"
 )
 
 // FindProductByUpc is the resolver for the findProductByUpc field.

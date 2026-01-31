@@ -1,4 +1,4 @@
-module github.com/n9te9/federation-gateway
+module github.com/n9te9/go-graphql-federation-gateway
 
 go 1.24.4
 

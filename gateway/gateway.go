@@ -7,9 +7,9 @@ import (
 	"os"
 
 	"github.com/google/uuid"
-	"github.com/n9te9/federation-gateway/federation/executor"
-	"github.com/n9te9/federation-gateway/federation/graph"
-	"github.com/n9te9/federation-gateway/federation/planner"
+	"github.com/n9te9/go-graphql-federation-gateway/federation/executor"
+	"github.com/n9te9/go-graphql-federation-gateway/federation/graph"
+	"github.com/n9te9/go-graphql-federation-gateway/federation/planner"
 	"github.com/n9te9/goliteql/query"
 )
 

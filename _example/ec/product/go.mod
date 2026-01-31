@@ -1,4 +1,4 @@
-module github.com/n9te9/federation-gateway/_example/ec/product
+module github.com/n9te9/go-graphql-federation-gateway/_example/ec/product
 
 go 1.25.4
 

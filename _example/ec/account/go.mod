@@ -1,4 +1,4 @@
-module github.com/n9te9/federation-gateway/_example/ec/account
+module github.com/n9te9/go-graphql-federation-gateway/_example/ec/account
 
 go 1.25.1
 

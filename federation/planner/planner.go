@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/n9te9/federation-gateway/federation/graph"
+	"github.com/n9te9/go-graphql-federation-gateway/federation/graph"
 	"github.com/n9te9/goliteql/query"
 	"github.com/n9te9/goliteql/schema"
 )
