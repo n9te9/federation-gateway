@@ -89,6 +89,7 @@ func TestQueryBuilder_Build(t *testing.T) {
 						Field:      "height",
 					},
 				},
+				DependsOn: []int{0},
 			},
 			query: `query {
 	products {
