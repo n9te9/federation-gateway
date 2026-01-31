@@ -34,9 +34,18 @@ func (qb *queryBuilder) buildFetchEntitiesQuery(step *planner.Step, entities Ent
 	builder.WriteString("query ($representations: [_Any!]!) {\n")
 	builder.WriteString("\t_entities(representations: $representations) {\n")
 
+	selectionsByParent := make(map[string][]*planner.Selection)
+	var parentTypes []string
 	for _, sel := range step.Selections {
-		builder.WriteString("\t\t... on " + sel.ParentType + " {\n")
-		if err := qb.writeSelections(&builder, step.Selections, "\t\t\t"); err != nil {
+		if _, ok := selectionsByParent[sel.ParentType]; !ok {
+			parentTypes = append(parentTypes, sel.ParentType)
+		}
+		selectionsByParent[sel.ParentType] = append(selectionsByParent[sel.ParentType], sel)
+	}
+
+	for _, parentType := range parentTypes {
+		builder.WriteString("\t\t... on " + parentType + " {\n")
+		if err := qb.writeSelections(&builder, selectionsByParent[parentType], "\t\t\t"); err != nil {
 			return "", nil, err
 		}
 		builder.WriteString("\t\t}\n")
@@ -67,6 +76,7 @@ func (qb *queryBuilder) writeSelections(sb *strings.Builder, selections []*plann
 
 		sb.WriteString("\n")
 	}
+
 	return nil
 }
 
