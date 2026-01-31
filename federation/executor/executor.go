@@ -588,5 +588,10 @@ func SetRequestHeaderToContext(ctx context.Context, header http.Header) context.
 }
 
 func GetRequestHeaderFromContext(ctx context.Context) http.Header {
-	return ctx.Value(requestHeaderContextKey{}).(http.Header)
+	h, ok := ctx.Value(requestHeaderContextKey{}).(http.Header)
+	if !ok {
+		return nil
+	}
+
+	return h
 }
