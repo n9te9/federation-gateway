@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/n9te9/federation-gateway/federation/graph"
+	"github.com/n9te9/go-graphql-federation-gateway/federation/graph"
 )
 
 func TestSuperGraph_Merge(t *testing.T) {

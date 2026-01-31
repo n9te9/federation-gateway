@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/goccy/go-yaml"
-	"github.com/n9te9/federation-gateway/gateway"
+	"github.com/n9te9/go-graphql-federation-gateway/gateway"
 )
 
 func Run() {
@@ -59,7 +59,7 @@ func Run() {
 }
 
 func loadGatewaySetting() (*gateway.GatewaySetting, error) {
-	f, err := os.Open("federation-gateway.yaml")
+	f, err := os.Open("go-graphql-federation-gateway.yaml")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open gateway settings file: %w", err)
 	}

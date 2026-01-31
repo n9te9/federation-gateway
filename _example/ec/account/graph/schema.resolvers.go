@@ -9,7 +9,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/n9te9/federation-gateway/_example/ec/account/graph/model"
+	"github.com/n9te9/go-graphql-federation-gateway/_example/ec/account/graph/model"
 )
 
 // Me is the resolver for the me field.

@@ -3,7 +3,7 @@ package executor
 import (
 	"strings"
 
-	"github.com/n9te9/federation-gateway/federation/planner"
+	"github.com/n9te9/go-graphql-federation-gateway/federation/planner"
 )
 
 type QueryBuilder interface {
