@@ -1,6 +1,7 @@
 package planner_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -50,16 +51,10 @@ func TestPlanner_Plan(t *testing.T) {
 					name: String
 					price: Int
 				}`
-				sg, err := graph.NewBaseSubGraph("aaaaaaaaa", []byte(sdl), "")
+				sg1, err := graph.NewBaseSubGraph("aaaaaaaaa", []byte(sdl), "")
 				if err != nil {
 					t.Fatal(err)
 				}
-
-				superGraph, err := graph.NewSuperGraphFromBytes([]byte(sdl))
-				if err != nil {
-					t.Fatalf("failed to parse root schema: %v", err)
-				}
-				superGraph.SubGraphs = append(superGraph.SubGraphs, sg)
 
 				subgraphSDL := `extend type Product @key(fields: "upc") {
 					upc: String! @external
@@ -68,14 +63,12 @@ func TestPlanner_Plan(t *testing.T) {
 					price: Int @external
 				}`
 
-				sg, err = graph.NewSubGraph("hogehoge", []byte(subgraphSDL), "")
+				sg2, err := graph.NewSubGraph("hogehoge", []byte(subgraphSDL), "")
 				if err != nil {
 					t.Fatal(err)
 				}
 
-				if err := superGraph.Merge(sg); err != nil {
-					t.Fatal(err)
-				}
+				superGraph, _ := graph.NewSuperGraph([]byte(fmt.Sprintf("%s\n%s\n", sdl, subgraphSDL)), []*graph.SubGraph{sg1, sg2})
 
 				return superGraph
 			}(),
@@ -211,10 +204,7 @@ func TestPlanner_Plan(t *testing.T) {
 				sg2, _ := graph.NewSubGraph("review", []byte(reviewSDL), "")
 				sg3, _ := graph.NewSubGraph("user", []byte(userSDL), "")
 
-				superGraph, _ := graph.NewSuperGraphFromBytes([]byte(productSDL))
-				superGraph.SubGraphs = append(superGraph.SubGraphs, sg1)
-				superGraph.Merge(sg2)
-				superGraph.Merge(sg3)
+				superGraph, _ := graph.NewSuperGraph([]byte(fmt.Sprintf("%s\n%s\n%s\n", productSDL, reviewSDL, userSDL)), []*graph.SubGraph{sg1, sg2, sg3})
 
 				return superGraph
 			}(),
