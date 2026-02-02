@@ -364,17 +364,7 @@ func TestExecutor_Execute(t *testing.T) {
 			}
 
 			e := executor.NewExecutor(tt.httpClient, superGraph)
-			got, gotErr := e.Execute(t.Context(), tt.plan, tt.variables)
-
-			if gotErr == nil && tt.wantErr != nil || tt.wantErr == nil && gotErr != nil {
-				t.Fatalf("Executor.Execute() error = %v, wantErr %v", gotErr, tt.wantErr)
-			}
-
-			if gotErr != nil && tt.wantErr != nil {
-				if gotErr.Error() != tt.wantErr.Error() {
-					t.Fatalf("Executor.Execute() error = %v, wantErr %v", gotErr, tt.wantErr)
-				}
-			}
+			got := e.Execute(t.Context(), tt.plan, tt.variables)
 
 			if d := cmp.Diff(tt.want, got); d != "" {
 				t.Fatalf("Executor.Execute() diff: %s", d)
