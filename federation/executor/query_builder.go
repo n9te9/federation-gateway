@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/n9te9/go-graphql-federation-gateway/federation/planner"
+	"github.com/n9te9/goliteql/schema"
 )
 
 type QueryBuilder interface {
@@ -166,7 +167,7 @@ func (qb *queryBuilder) getArgumentType(step *planner.Step, parentType, fieldNam
 							if arg.Type.Nullable {
 								return string(arg.Type.Name)
 							} else {
-								return fmt.Sprintf("%s!", string(arg.Type.Name))
+								return qb.resolveArgumentType(arg.Type)
 							}
 						}
 					}
@@ -176,6 +177,23 @@ func (qb *queryBuilder) getArgumentType(step *planner.Step, parentType, fieldNam
 	}
 
 	return "Any!"
+}
+
+func (qb *queryBuilder) resolveArgumentType(argType *schema.FieldType) string {
+	if argType.IsList {
+		innerType := qb.resolveArgumentType(argType.ListType)
+		if argType.Nullable {
+			return fmt.Sprintf("[%s]", innerType)
+		} else {
+			return fmt.Sprintf("[%s]!", innerType)
+		}
+	}
+
+	if argType.Nullable {
+		return string(argType.Name)
+	}
+
+	return fmt.Sprintf("%s!", string(argType.Name))
 }
 
 func (qb *queryBuilder) resolveValue(val any, clientVars map[string]any) any {
