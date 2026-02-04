@@ -3,6 +3,7 @@ package planner
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/n9te9/go-graphql-federation-gateway/federation/graph"
@@ -25,6 +26,8 @@ type Step struct {
 	Selections []*Selection
 	DependsOn  []int
 	Done       chan struct{}
+
+	ownershipMap map[string]struct{}
 
 	Err error
 }
@@ -306,12 +309,18 @@ func (p *planner) plan(queryName string, typeDefinition *schema.TypeDefinition, 
 			continue
 		}
 
+		ownership := make(map[string]struct{})
+		for k := range subGraph.OwnershipFieldMap() {
+			ownership[k] = struct{}{}
+		}
+
 		plan.Steps = append(plan.Steps, &Step{
-			SubGraph:   subGraph,
-			Selections: sels,
-			DependsOn:  nil,
-			Err:        nil,
-			Done:       make(chan struct{}),
+			SubGraph:     subGraph,
+			Selections:   sels,
+			DependsOn:    nil,
+			Err:          nil,
+			ownershipMap: make(map[string]struct{}),
+			Done:         make(chan struct{}),
 		})
 	}
 
@@ -327,46 +336,100 @@ func (p *planner) solveDependency(plan *Plan) {
 	}
 
 	for _, step := range plan.Steps {
-		p.solveStepDependency(plan.Steps, step)
+		if step.ID == 0 {
+			continue
+		}
+		p.solveOwnershipDependencies(plan.Steps, step)
+		p.solveProvidingDependencies(plan.Steps, step)
+	}
+
+	p.enrichSelection(plan)
+}
+
+func (p *planner) solveOwnershipDependencies(steps Steps, targetStep *Step) {
+	neededKeys := make(map[string]struct{})
+	for typeName, requiredField := range p.findRequiredKeys(targetStep) {
+		for _, key := range requiredField {
+			neededKeys[typeName+"."+key] = struct{}{}
+		}
+	}
+
+	for typeName, v := range targetStep.SubGraph.RequiredFields() {
+		for fieldSet := range v {
+			neededKeys[typeName+"."+fieldSet] = struct{}{}
+		}
+	}
+
+	dependsOn := make([]int, 0, len(steps))
+	for _, step := range steps {
+		if step == targetStep {
+			continue
+		}
+
+		var hasDependency bool
+		for key := range neededKeys {
+			if _, ok := step.SubGraph.OwnershipFieldMap()[key]; ok {
+				hasDependency = true
+				break
+			}
+		}
+
+		if !hasDependency {
+			continue
+		}
+
+		if !slices.Contains(dependsOn, step.ID) && !slices.Contains(step.DependsOn, targetStep.ID) {
+			dependsOn = append(dependsOn, step.ID)
+		}
+	}
+
+	targetStep.DependsOn = dependsOn
+}
+
+func (p *planner) solveProvidingDependencies(steps Steps, targetStep *Step) {
+	requiredKeysMap := p.findRequiredKeys(targetStep)
+	for typeName := range requiredKeysMap {
+		for _, providerStep := range steps {
+			if targetStep == providerStep {
+				continue
+			}
+
+			keys := p.getEntityKeys(providerStep.SubGraph, typeName)
+			if len(keys) == 0 {
+				continue
+			}
+
+			if !slices.Contains(targetStep.DependsOn, providerStep.ID) && !slices.Contains(providerStep.DependsOn, targetStep.ID) {
+				targetStep.DependsOn = append(targetStep.DependsOn, providerStep.ID)
+			}
+
+			for _, key := range keys {
+				providerStep.ownershipMap[typeName+"."+key] = struct{}{}
+			}
+		}
 	}
 }
 
-func (p *planner) solveStepDependency(steps Steps, targetStep *Step) {
-	requiredKeysMap := p.findRequiredKeys(targetStep)
-	if len(requiredKeysMap) == 0 {
-		return
-	}
+func (p *planner) enrichSelection(plan *Plan) {
+	for _, targetStep := range plan.Steps {
+		requiredKeysMap := p.findRequiredKeys(targetStep)
+		if len(requiredKeysMap) == 0 {
+			continue
+		}
 
-	for typeName, keys := range requiredKeysMap {
-		for _, key := range keys {
-			for _, providerStep := range steps {
-				if targetStep == providerStep {
-					continue
-				}
+		if targetStep.ID > 0 {
+			targetStep.SubGraph.BaseName = ""
+		}
 
-				if providerStep.hasField(key) {
-					updatedSelections, injected := p.injectKey(providerStep.Selections, typeName, key)
+		for typeName, keys := range requiredKeysMap {
+			for _, key := range keys {
+				for _, providerID := range targetStep.DependsOn {
+					providerStep := plan.GetStepByID(providerID)
 
-					if injected {
-						providerStep.Selections = updatedSelections
-
-						exists := false
-						for _, id := range targetStep.DependsOn {
-							if id == providerStep.ID {
-								exists = true
-								break
-							}
-						}
-
-						if !exists && targetStep.ID != 0 {
-							targetStep.DependsOn = append(targetStep.DependsOn, providerStep.ID)
-							targetStep.SubGraph.BaseName = ""
-						}
-					} else {
-						providerStep.Selections = append(providerStep.Selections, &Selection{
-							ParentType: typeName,
-							Field:      key,
-						})
+					fieldKey := typeName + "." + key
+					if _, ok := providerStep.ownershipMap[fieldKey]; ok {
+						updated, _ := p.injectKey(providerStep.Selections, typeName, key)
+						providerStep.Selections = updated
 					}
 				}
 			}

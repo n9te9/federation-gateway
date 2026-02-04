@@ -196,7 +196,8 @@ func TestPlanner_Plan(t *testing.T) {
 			superGraph: func() *graph.SuperGraph {
 				productSDL := `type Query { products: [Product] } type Product @key(fields: "upc") { upc: String! name: String }`
 				reviewSDL := `type Review { id: ID! body: String author: User product: Product }
-							extend type Product @key(fields: "upc") { upc: String! @external reviews: [Review] }`
+							extend type Product @key(fields: "upc") { upc: String! @external reviews: [Review] }
+							extend type User @key(fields: "id") { id: ID! @external }`
 				userSDL := `type Query { me: User } type User @key(fields: "id") { id: ID! username: String }`
 
 				sg1, _ := graph.NewSubGraph("product", []byte(productSDL), "")
@@ -236,7 +237,8 @@ func TestPlanner_Plan(t *testing.T) {
 						ID: 1,
 						SubGraph: func() *graph.SubGraph {
 							sdl := `type Review { id: ID! body: String author: User product: Product }
-									extend type Product @key(fields: "upc") { upc: String! @external reviews: [Review] }`
+									extend type Product @key(fields: "upc") { upc: String! @external reviews: [Review] }
+									extend type User @key(fields: "id") { id: ID! @external }`
 							sg, _ := graph.NewSubGraph("review", []byte(sdl), "")
 							return sg
 						}(),
@@ -537,6 +539,301 @@ func TestPlanner_Plan(t *testing.T) {
 						Field:      "products",
 						SubSelections: []*planner.Selection{
 							{ParentType: "Product", Field: "shippingEstimate"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Complex case: Mutation requiring entity resolution (Review -> User)",
+			doc: func() *query.Document {
+				lexer := query.NewLexer()
+				parser := query.NewParser(lexer)
+				doc, err := parser.Parse([]byte(`
+                    mutation {
+                        addReview(body: "Excellent!") {
+                            body
+                            author {
+                                username
+                            }
+                        }
+                    }
+                `))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return doc
+			}(),
+			superGraph: func() *graph.SuperGraph {
+				reviewSDL := `
+                    type Mutation { addReview(body: String): Review }
+                    type Review { id: ID! body: String author: User }
+                    extend type User @key(fields: "id") { id: ID! @external }
+                `
+				userSDL := `type User @key(fields: "id") { id: ID! username: String }`
+
+				sg1, _ := graph.NewSubGraph("review", []byte(reviewSDL), "")
+				sg2, _ := graph.NewSubGraph("user", []byte(userSDL), "")
+
+				superGraph, _ := graph.NewSuperGraph([]byte(fmt.Sprintf("%s\n%s\n", reviewSDL, userSDL)), []*graph.SubGraph{sg1, sg2})
+				return superGraph
+			}(),
+			want: &planner.Plan{
+				Steps: []*planner.Step{
+					{
+						ID: 0,
+						SubGraph: func() *graph.SubGraph {
+							sdl := `
+                                type Mutation { addReview(body: String): Review }
+                                type Review { id: ID! body: String author: User }
+                                extend type User @key(fields: "id") { id: ID! @external }
+                            `
+							sg, _ := graph.NewSubGraph("review", []byte(sdl), "")
+							sg.BaseName = "addReview"
+							return sg
+						}(),
+						Selections: []*planner.Selection{
+							{ParentType: "Review", Field: "body"},
+							{
+								ParentType: "Review",
+								Field:      "author",
+								SubSelections: []*planner.Selection{
+									{ParentType: "User", Field: "id"},
+								},
+							},
+						},
+						DependsOn: nil,
+					},
+					{
+						ID: 1,
+						SubGraph: func() *graph.SubGraph {
+							sdl := `type User @key(fields: "id") { id: ID! username: String }`
+							sg, _ := graph.NewSubGraph("user", []byte(sdl), "")
+							return sg
+						}(),
+						Selections: []*planner.Selection{
+							{ParentType: "User", Field: "username"},
+						},
+						DependsOn: []int{0},
+					},
+				},
+				RootSelections: []*planner.Selection{
+					{
+						ParentType: "Mutation",
+						Field:      "addReview",
+						SubSelections: []*planner.Selection{
+							{ParentType: "Review", Field: "body"},
+							{
+								ParentType: "Review",
+								Field:      "author",
+								SubSelections: []*planner.Selection{
+									{ParentType: "User", Field: "username"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Complex case: Mutation with deep nested resolution (PostComment -> Product)",
+			doc: func() *query.Document {
+				lexer := query.NewLexer()
+				parser := query.NewParser(lexer)
+				doc, err := parser.Parse([]byte(`
+                    mutation {
+                        postComment(text: "Where is this?") {
+                            text
+                            product {
+                                name
+                            }
+                        }
+                    }
+                `))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return doc
+			}(),
+			superGraph: func() *graph.SuperGraph {
+				socialSDL := `
+                    type Mutation { postComment(text: String): Comment }
+                    type Comment { id: ID! text: String product: Product }
+                    extend type Product @key(fields: "upc") { upc: String! @external }
+                `
+				inventorySDL := `type Product @key(fields: "upc") { upc: String! name: String }`
+
+				sg1, _ := graph.NewSubGraph("social", []byte(socialSDL), "")
+				sg2, _ := graph.NewSubGraph("inventory", []byte(inventorySDL), "")
+
+				superGraph, _ := graph.NewSuperGraph([]byte(fmt.Sprintf("%s\n%s\n", socialSDL, inventorySDL)), []*graph.SubGraph{sg1, sg2})
+				return superGraph
+			}(),
+			want: &planner.Plan{
+				Steps: []*planner.Step{
+					{
+						ID: 0,
+						SubGraph: func() *graph.SubGraph {
+							sdl := `
+                                type Mutation { postComment(text: String): Comment }
+                                type Comment { id: ID! text: String product: Product }
+                                extend type Product @key(fields: "upc") { upc: String! @external }
+                            `
+							sg, _ := graph.NewSubGraph("social", []byte(sdl), "")
+							sg.BaseName = "postComment"
+							return sg
+						}(),
+						Selections: []*planner.Selection{
+							{ParentType: "Comment", Field: "text"},
+							{
+								ParentType: "Comment",
+								Field:      "product",
+								SubSelections: []*planner.Selection{
+									{ParentType: "Product", Field: "upc"},
+								},
+							},
+						},
+					},
+					{
+						ID: 1,
+						SubGraph: func() *graph.SubGraph {
+							sdl := `type Product @key(fields: "upc") { upc: String! name: String }`
+							sg, _ := graph.NewSubGraph("inventory", []byte(sdl), "")
+							return sg
+						}(),
+						Selections: []*planner.Selection{
+							{ParentType: "Product", Field: "name"},
+						},
+						DependsOn: []int{0},
+					},
+				},
+				RootSelections: []*planner.Selection{
+					{
+						ParentType: "Mutation",
+						Field:      "postComment",
+						SubSelections: []*planner.Selection{
+							{ParentType: "Comment", Field: "text"},
+							{
+								ParentType: "Comment",
+								Field:      "product",
+								SubSelections: []*planner.Selection{
+									{ParentType: "Product", Field: "name"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Complex case: Multiple mutations with cross-subgraph dependency",
+			doc: func() *query.Document {
+				lexer := query.NewLexer()
+				parser := query.NewParser(lexer)
+				doc, err := parser.Parse([]byte(`
+                    mutation {
+                        createProduct(name: "New Item") { upc }
+                        addReview(upc: "item-1", body: "Good") { 
+                            id 
+                            product { name } 
+                        }
+                    }
+                `))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return doc
+			}(),
+			superGraph: func() *graph.SuperGraph {
+				inventorySDL := `
+                    type Mutation { createProduct(name: String): Product }
+                    type Product @key(fields: "upc") { upc: String! name: String }
+                `
+				reviewSDL := `
+                    type Mutation { addReview(upc: String, body: String): Review }
+                    type Review { id: ID! body: String product: Product }
+                    extend type Product @key(fields: "upc") { upc: String! @external }
+                `
+
+				sg1, _ := graph.NewSubGraph("inventory", []byte(inventorySDL), "")
+				sg2, _ := graph.NewSubGraph("review", []byte(reviewSDL), "")
+
+				superGraph, _ := graph.NewSuperGraph([]byte(fmt.Sprintf("%s\n%s\n", inventorySDL, reviewSDL)), []*graph.SubGraph{sg1, sg2})
+				return superGraph
+			}(),
+			want: &planner.Plan{
+				Steps: []*planner.Step{
+					{
+						ID: 0,
+						SubGraph: func() *graph.SubGraph {
+							sg, _ := graph.NewSubGraph("inventory", []byte(`
+                                type Mutation { createProduct(name: String): Product }
+                                type Product @key(fields: "upc") { upc: String! name: String }
+                            `), "")
+							sg.BaseName = "createProduct"
+							return sg
+						}(),
+						Selections: []*planner.Selection{
+							{ParentType: "Product", Field: "upc"},
+						},
+					},
+					{
+						ID: 1,
+						SubGraph: func() *graph.SubGraph {
+							sg, _ := graph.NewSubGraph("review", []byte(`
+                                type Mutation { addReview(upc: String, body: String): Review }
+                                type Review { id: ID! body: String product: Product }
+                                extend type Product @key(fields: "upc") { upc: String! @external }
+                            `), "")
+							sg.BaseName = "addReview"
+							return sg
+						}(),
+						Selections: []*planner.Selection{
+							{ParentType: "Review", Field: "id"},
+							{
+								ParentType: "Review",
+								Field:      "product",
+								SubSelections: []*planner.Selection{
+									{ParentType: "Product", Field: "upc"},
+								},
+							},
+						},
+					},
+					{
+						ID: 2,
+						SubGraph: func() *graph.SubGraph {
+							sg, _ := graph.NewSubGraph("inventory", []byte(`
+                                type Mutation { createProduct(name: String): Product }
+                                type Product @key(fields: "upc") { upc: String! name: String }
+                            `), "")
+							return sg
+						}(),
+						Selections: []*planner.Selection{
+							{ParentType: "Product", Field: "name"},
+						},
+						DependsOn: []int{1},
+					},
+				},
+				RootSelections: []*planner.Selection{
+					{
+						ParentType: "Mutation",
+						Field:      "createProduct",
+						SubSelections: []*planner.Selection{
+							{ParentType: "Product", Field: "upc"},
+						},
+					},
+					{
+						ParentType: "Mutation",
+						Field:      "addReview",
+						SubSelections: []*planner.Selection{
+							{ParentType: "Review", Field: "id"},
+							{
+								ParentType: "Review",
+								Field:      "product",
+								SubSelections: []*planner.Selection{
+									{ParentType: "Product", Field: "name"},
+								},
+							},
 						},
 					},
 				},
