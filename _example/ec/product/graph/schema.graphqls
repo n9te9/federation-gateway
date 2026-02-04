@@ -5,6 +5,10 @@ type Query {
   topProducts(first: Int = 5): [Product]
 }
 
+type Mutation {
+  createProduct(name: String!): Product
+}
+
 type Product @key(fields: "upc") {
   upc: String!
   name: String!

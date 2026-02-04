@@ -7,9 +7,24 @@ package graph
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/ec/product/graph/model"
 )
+
+// CreateProduct is the resolver for the createProduct field.
+func (r *mutationResolver) CreateProduct(ctx context.Context, name string) (*model.Product, error) {
+	newUpc := fmt.Sprintf("%d", len(products)+1)
+	newProduct := &model.Product{
+		Upc:   newUpc,
+		Name:  name,
+		Price: &[]int32{0}[0],
+	}
+
+	products[newUpc] = newProduct
+
+	return newProduct, nil
+}
 
 // TopProducts is the resolver for the topProducts field.
 func (r *queryResolver) TopProducts(ctx context.Context, first *int32) ([]*model.Product, error) {
@@ -26,7 +41,11 @@ func (r *queryResolver) TopProducts(ctx context.Context, first *int32) ([]*model
 	return result, nil
 }
 
+// Mutation returns MutationResolver implementation.
+func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
+
 // Query returns QueryResolver implementation.
 func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 
+type mutationResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }

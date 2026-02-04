@@ -17,6 +17,7 @@ func TestPlanner_Plan(t *testing.T) {
 		name       string
 		doc        *query.Document
 		superGraph *graph.SuperGraph
+		variables  map[string]any
 		want       *planner.Plan
 		wantErr    error
 	}{
@@ -48,6 +49,7 @@ func TestPlanner_Plan(t *testing.T) {
 				superGraph, _ := graph.NewSuperGraph([]byte(fmt.Sprintf("%s\n%s\n", sdl, subgraphSDL)), []*graph.SubGraph{sg1, sg2})
 				return superGraph
 			}(),
+			variables: make(map[string]any),
 			want: &planner.Plan{
 				Steps: []*planner.Step{
 					{
@@ -57,7 +59,9 @@ func TestPlanner_Plan(t *testing.T) {
 							sg, _ := graph.NewSubGraph("aaaaaaaaa", []byte(sdl), "")
 							return sg
 						}(),
-						RootFields: []string{"products"},
+						RootFields:    []string{"products"},
+						OperationType: "query",
+						RootArguments: map[string]map[string]any{"products": {}},
 						Selections: []*planner.Selection{
 							{ParentType: "Product", Field: "upc", SubSelections: []*planner.Selection{}},
 							{ParentType: "Product", Field: "name", SubSelections: []*planner.Selection{}},
@@ -71,7 +75,8 @@ func TestPlanner_Plan(t *testing.T) {
 							sg, _ := graph.NewSubGraph("hogehoge", []byte(sdl), "")
 							return sg
 						}(),
-						RootFields: nil,
+						RootFields:    nil,
+						OperationType: "",
 						Selections: []*planner.Selection{
 							{ParentType: "Product", Field: "width", SubSelections: []*planner.Selection{}},
 							{ParentType: "Product", Field: "height", SubSelections: []*planner.Selection{}},
@@ -129,6 +134,7 @@ func TestPlanner_Plan(t *testing.T) {
 				superGraph, _ := graph.NewSuperGraph([]byte(fmt.Sprintf("%s\n%s\n%s\n", productSDL, reviewSDL, userSDL)), []*graph.SubGraph{sg1, sg2, sg3})
 				return superGraph
 			}(),
+			variables: make(map[string]any),
 			want: &planner.Plan{
 				Steps: []*planner.Step{
 					{
@@ -137,7 +143,9 @@ func TestPlanner_Plan(t *testing.T) {
 							sg, _ := graph.NewSubGraph("product", []byte(`type Query { products: [Product] } type Product @key(fields: "upc") { upc: String! name: String }`), "")
 							return sg
 						}(),
-						RootFields: []string{"products"},
+						RootFields:    []string{"products"},
+						OperationType: "query",
+						RootArguments: map[string]map[string]any{"products": {}},
 						Selections: []*planner.Selection{
 							{ParentType: "Product", Field: "upc", SubSelections: []*planner.Selection{}},
 							{ParentType: "Product", Field: "name", SubSelections: []*planner.Selection{}},
@@ -150,7 +158,8 @@ func TestPlanner_Plan(t *testing.T) {
 							sg, _ := graph.NewSubGraph("review", []byte(`type Review { id: ID! body: String author: User product: Product } extend type Product @key(fields: "upc") { upc: String! @external reviews: [Review] } extend type User @key(fields: "id") { id: ID! @external }`), "")
 							return sg
 						}(),
-						RootFields: nil,
+						RootFields:    nil,
+						OperationType: "",
 						Selections: []*planner.Selection{
 							{
 								ParentType: "Product",
@@ -175,7 +184,8 @@ func TestPlanner_Plan(t *testing.T) {
 							sg, _ := graph.NewSubGraph("user", []byte(`type Query { me: User } type User @key(fields: "id") { id: ID! username: String }`), "")
 							return sg
 						}(),
-						RootFields: nil,
+						RootFields:    nil,
+						OperationType: "",
 						Selections: []*planner.Selection{
 							{ParentType: "User", Field: "username", SubSelections: []*planner.Selection{}},
 						},
@@ -227,6 +237,7 @@ func TestPlanner_Plan(t *testing.T) {
 				superGraph, _ := graph.NewSuperGraph([]byte(fmt.Sprintf("%s\n%s\n", inventorySDL, shippingSDL)), []*graph.SubGraph{sg1, sg2})
 				return superGraph
 			}(),
+			variables: make(map[string]any),
 			want: &planner.Plan{
 				Steps: []*planner.Step{
 					{
@@ -235,7 +246,9 @@ func TestPlanner_Plan(t *testing.T) {
 							sg, _ := graph.NewSubGraph("inventory", []byte(`type Query { products: [Product] } type Product @key(fields: "upc") { upc: String! name: String weight: Int price: Int }`), "")
 							return sg
 						}(),
-						RootFields: []string{"products"},
+						RootFields:    []string{"products"},
+						OperationType: "query",
+						RootArguments: map[string]map[string]any{"products": {}},
 						Selections: []*planner.Selection{
 							{ParentType: "Product", Field: "upc", SubSelections: []*planner.Selection{}},
 							{ParentType: "Product", Field: "name", SubSelections: []*planner.Selection{}},
@@ -250,7 +263,8 @@ func TestPlanner_Plan(t *testing.T) {
 							sg, _ := graph.NewSubGraph("shipping", []byte(`extend type Product @key(fields: "upc") { upc: String! @external weight: Int @external shippingEstimate: Int @requires(fields: "weight price") }`), "")
 							return sg
 						}(),
-						RootFields: nil,
+						RootFields:    nil,
+						OperationType: "",
 						Selections: []*planner.Selection{
 							{ParentType: "Product", Field: "shippingEstimate", SubSelections: []*planner.Selection{}},
 						},
@@ -288,6 +302,7 @@ func TestPlanner_Plan(t *testing.T) {
 				superGraph, _ := graph.NewSuperGraph([]byte(fmt.Sprintf("%s\n%s\n", reviewSDL, inventorySDL)), []*graph.SubGraph{sg1, sg2})
 				return superGraph
 			}(),
+			variables: make(map[string]any),
 			want: &planner.Plan{
 				Steps: []*planner.Step{
 					{
@@ -296,7 +311,14 @@ func TestPlanner_Plan(t *testing.T) {
 							sg, _ := graph.NewSubGraph("review", []byte(`type Mutation { addReview(body: String, upc: String): Review } type Review { id: ID! body: String }`), "")
 							return sg
 						}(),
-						RootFields: []string{"addReview"},
+						RootFields:    []string{"addReview"},
+						OperationType: "mutation",
+						RootArguments: map[string]map[string]any{
+							"addReview": {
+								"body": []byte(`"cool"`),
+								"upc":  []byte(`"1"`),
+							},
+						},
 						Selections: []*planner.Selection{
 							{ParentType: "Review", Field: "body"},
 							{ParentType: "Review", Field: "id"},
@@ -308,6 +330,10 @@ func TestPlanner_Plan(t *testing.T) {
 					{
 						ParentType: "Mutation",
 						Field:      "addReview",
+						Arguments: map[string]any{
+							"body": []byte(`"cool"`),
+							"upc":  []byte(`"1"`),
+						},
 						SubSelections: []*planner.Selection{
 							{ParentType: "Review", Field: "id"},
 							{ParentType: "Review", Field: "body"},
@@ -335,6 +361,7 @@ func TestPlanner_Plan(t *testing.T) {
 				superGraph, _ := graph.NewSuperGraph([]byte(fmt.Sprintf("%s\n%s\n", inventorySDL, shippingSDL)), []*graph.SubGraph{sg1, sg2})
 				return superGraph
 			}(),
+			variables: make(map[string]any),
 			want: &planner.Plan{
 				Steps: []*planner.Step{
 					{
@@ -343,7 +370,9 @@ func TestPlanner_Plan(t *testing.T) {
 							sg, _ := graph.NewSubGraph("inventory", []byte(`type Query { products: [Product] } type Product @key(fields: "upc") { upc: String! weight: Int }`), "")
 							return sg
 						}(),
-						RootFields: []string{"products"},
+						RootFields:    []string{"products"},
+						OperationType: "query",
+						RootArguments: map[string]map[string]any{"products": {}},
 						Selections: []*planner.Selection{
 							{ParentType: "Product", Field: "upc"},
 							{ParentType: "Product", Field: "weight"},
@@ -356,7 +385,8 @@ func TestPlanner_Plan(t *testing.T) {
 							sg, _ := graph.NewSubGraph("shipping", []byte(`type Product @key(fields: "upc") { upc: String! @external weight: Int @external shippingEstimate: Int @requires(fields: "weight") }`), "")
 							return sg
 						}(),
-						RootFields: nil,
+						RootFields:    nil,
+						OperationType: "",
 						Selections: []*planner.Selection{
 							{ParentType: "Product", Field: "shippingEstimate"},
 						},
@@ -393,6 +423,7 @@ func TestPlanner_Plan(t *testing.T) {
 				superGraph, _ := graph.NewSuperGraph([]byte(fmt.Sprintf("%s\n%s\n", reviewSDL, userSDL)), []*graph.SubGraph{sg1, sg2})
 				return superGraph
 			}(),
+			variables: make(map[string]any),
 			want: &planner.Plan{
 				Steps: []*planner.Step{
 					{
@@ -401,7 +432,13 @@ func TestPlanner_Plan(t *testing.T) {
 							sg, _ := graph.NewSubGraph("review", []byte(`type Mutation { addReview(body: String): Review } type Review { id: ID! body: String author: User } extend type User @key(fields: "id") { id: ID! @external }`), "")
 							return sg
 						}(),
-						RootFields: []string{"addReview"},
+						RootFields:    []string{"addReview"},
+						OperationType: "mutation",
+						RootArguments: map[string]map[string]any{
+							"addReview": {
+								"body": []uint8(`"Excellent!"`),
+							},
+						},
 						Selections: []*planner.Selection{
 							{ParentType: "Review", Field: "body"},
 							{
@@ -420,7 +457,8 @@ func TestPlanner_Plan(t *testing.T) {
 							sg, _ := graph.NewSubGraph("user", []byte(`type User @key(fields: "id") { id: ID! username: String }`), "")
 							return sg
 						}(),
-						RootFields: nil,
+						RootFields:    nil,
+						OperationType: "",
 						Selections: []*planner.Selection{
 							{ParentType: "User", Field: "username"},
 						},
@@ -431,6 +469,9 @@ func TestPlanner_Plan(t *testing.T) {
 					{
 						ParentType: "Mutation",
 						Field:      "addReview",
+						Arguments: map[string]any{
+							"body": []uint8(`"Excellent!"`),
+						},
 						SubSelections: []*planner.Selection{
 							{ParentType: "Review", Field: "body"},
 							{
@@ -464,6 +505,7 @@ func TestPlanner_Plan(t *testing.T) {
 				superGraph, _ := graph.NewSuperGraph([]byte(fmt.Sprintf("%s\n%s\n", socialSDL, inventorySDL)), []*graph.SubGraph{sg1, sg2})
 				return superGraph
 			}(),
+			variables: make(map[string]any),
 			want: &planner.Plan{
 				Steps: []*planner.Step{
 					{
@@ -472,7 +514,13 @@ func TestPlanner_Plan(t *testing.T) {
 							sg, _ := graph.NewSubGraph("social", []byte(`type Mutation { postComment(text: String): Comment } type Comment { id: ID! text: String product: Product } extend type Product @key(fields: "upc") { upc: String! @external }`), "")
 							return sg
 						}(),
-						RootFields: []string{"postComment"},
+						RootFields:    []string{"postComment"},
+						OperationType: "mutation",
+						RootArguments: map[string]map[string]any{
+							"postComment": {
+								"text": []uint8(`"Where is this?"`),
+							},
+						},
 						Selections: []*planner.Selection{
 							{ParentType: "Comment", Field: "text"},
 							{
@@ -490,7 +538,8 @@ func TestPlanner_Plan(t *testing.T) {
 							sg, _ := graph.NewSubGraph("inventory", []byte(`type Product @key(fields: "upc") { upc: String! name: String }`), "")
 							return sg
 						}(),
-						RootFields: nil,
+						RootFields:    nil,
+						OperationType: "",
 						Selections: []*planner.Selection{
 							{ParentType: "Product", Field: "name"},
 						},
@@ -501,6 +550,9 @@ func TestPlanner_Plan(t *testing.T) {
 					{
 						ParentType: "Mutation",
 						Field:      "postComment",
+						Arguments: map[string]any{
+							"text": []uint8(`"Where is this?"`),
+						},
 						SubSelections: []*planner.Selection{
 							{ParentType: "Comment", Field: "text"},
 							{
@@ -534,6 +586,7 @@ func TestPlanner_Plan(t *testing.T) {
 				superGraph, _ := graph.NewSuperGraph([]byte(fmt.Sprintf("%s\n%s\n", inventorySDL, reviewSDL)), []*graph.SubGraph{sg1, sg2})
 				return superGraph
 			}(),
+			variables: make(map[string]any),
 			want: &planner.Plan{
 				Steps: []*planner.Step{
 					{
@@ -542,7 +595,13 @@ func TestPlanner_Plan(t *testing.T) {
 							sg, _ := graph.NewSubGraph("inventory", []byte(`type Mutation { createProduct(name: String): Product } type Product @key(fields: "upc") { upc: String! name: String }`), "")
 							return sg
 						}(),
-						RootFields: []string{"createProduct"},
+						RootFields:    []string{"createProduct"},
+						OperationType: "mutation",
+						RootArguments: map[string]map[string]any{
+							"createProduct": {
+								"name": []uint8(`"New Item"`),
+							},
+						},
 						Selections: []*planner.Selection{
 							{ParentType: "Product", Field: "upc"},
 						},
@@ -553,7 +612,14 @@ func TestPlanner_Plan(t *testing.T) {
 							sg, _ := graph.NewSubGraph("review", []byte(`type Mutation { addReview(upc: String, body: String): Review } type Review { id: ID! body: String product: Product } extend type Product @key(fields: "upc") { upc: String! @external }`), "")
 							return sg
 						}(),
-						RootFields: []string{"addReview"},
+						RootFields:    []string{"addReview"},
+						OperationType: "mutation",
+						RootArguments: map[string]map[string]any{
+							"addReview": {
+								"body": []uint8(`"Good"`),
+								"upc":  []uint8(`"item-1"`),
+							},
+						},
 						Selections: []*planner.Selection{
 							{ParentType: "Review", Field: "id"},
 							{
@@ -571,7 +637,8 @@ func TestPlanner_Plan(t *testing.T) {
 							sg, _ := graph.NewSubGraph("inventory", []byte(`type Mutation { createProduct(name: String): Product } type Product @key(fields: "upc") { upc: String! name: String }`), "")
 							return sg
 						}(),
-						RootFields: nil,
+						RootFields:    nil,
+						OperationType: "",
 						Selections: []*planner.Selection{
 							{ParentType: "Product", Field: "name"},
 						},
@@ -585,10 +652,12 @@ func TestPlanner_Plan(t *testing.T) {
 						SubSelections: []*planner.Selection{
 							{ParentType: "Product", Field: "upc"},
 						},
+						Arguments: map[string]any{"name": []uint8(`"New Item"`)},
 					},
 					{
 						ParentType: "Mutation",
 						Field:      "addReview",
+						Arguments:  map[string]any{"body": []uint8(`"Good"`), "upc": []uint8(`"item-1"`)},
 						SubSelections: []*planner.Selection{
 							{ParentType: "Review", Field: "id"},
 							{
@@ -608,7 +677,7 @@ func TestPlanner_Plan(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := planner.NewPlanner(tt.superGraph)
-			got, err := p.Plan(tt.doc)
+			got, err := p.Plan(tt.doc, tt.variables)
 			if (err != nil) != (tt.wantErr != nil) {
 				t.Fatalf("Planner.Plan() error = %v, wantErr %v", err, tt.wantErr)
 			}

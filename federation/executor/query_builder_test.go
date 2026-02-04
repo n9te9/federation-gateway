@@ -111,7 +111,7 @@ func TestQueryBuilder_Build(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			qb := executor.NewQueryBuilder()
-			got, _, err := qb.Build(tt.step, nil)
+			got, _, err := qb.Build(tt.step, nil, nil)
 			if err != nil && tt.wantErr == nil {
 				t.Errorf("QueryBuilder.Build() unexpected error: %v", err)
 				return

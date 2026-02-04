@@ -2,6 +2,9 @@
 
 package model
 
+type Mutation struct {
+}
+
 type Product struct {
 	Upc    string `json:"upc"`
 	Name   string `json:"name"`

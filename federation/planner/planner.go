@@ -12,7 +12,7 @@ import (
 )
 
 type Planner interface {
-	Plan(doc *query.Document) (*Plan, error)
+	Plan(doc *query.Document, variables map[string]any) (*Plan, error)
 }
 
 type planner struct {
@@ -23,10 +23,12 @@ type Step struct {
 	ID       int
 	SubGraph *graph.SubGraph
 
-	RootFields []string
-	Selections []*Selection
-	DependsOn  []int
-	Done       chan struct{}
+	RootFields    []string
+	Selections    []*Selection
+	RootArguments map[string]map[string]any
+	OperationType string
+	DependsOn     []int
+	Done          chan struct{}
 
 	ownershipMap map[string]struct{}
 
@@ -87,7 +89,7 @@ func (p *Plan) Selections() []*Selection {
 	return ret
 }
 
-func (p *planner) Plan(doc *query.Document) (*Plan, error) {
+func (p *planner) Plan(doc *query.Document, variables map[string]any) (*Plan, error) {
 	op := p.superGraph.GetOperation(doc)
 	if len(op.Selections) == 0 {
 		return nil, errors.New("empty selection")
@@ -119,14 +121,20 @@ func (p *planner) Plan(doc *query.Document) (*Plan, error) {
 
 	var rootSelections []*Selection
 	for i, f := range queryFields {
-		selections, err := p.extractSelections(f.Selections, string(schemaTypeDefinitions[i].Name))
+		selections, err := p.extractSelections(f.Selections, string(schemaTypeDefinitions[i].Name), variables)
 		if err != nil {
 			return nil, err
+		}
+
+		rootArgs := make(map[string]any)
+		for _, arg := range f.Arguments {
+			rootArgs[string(arg.Name)] = p.resolveValue(arg.Value, variables)
 		}
 
 		rootSelections = append(rootSelections, &Selection{
 			ParentType:    rootTypeName,
 			Field:         string(f.Name),
+			Arguments:     rootArgs,
 			SubSelections: selections,
 		})
 	}
@@ -139,7 +147,15 @@ func (p *planner) Plan(doc *query.Document) (*Plan, error) {
 	return plan, nil
 }
 
-func (p *planner) extractSelections(selection []query.Selection, parentType string) ([]*Selection, error) {
+func (p *planner) resolveValue(v any, variables map[string]any) any {
+	s := fmt.Sprintf("%v", v)
+	if strings.HasPrefix(s, "$") {
+		return variables[strings.TrimPrefix(s, "$")]
+	}
+	return v
+}
+
+func (p *planner) extractSelections(selection []query.Selection, parentType string, variables map[string]any) ([]*Selection, error) {
 	ret := make([]*Selection, 0)
 	for _, sel := range selection {
 		switch f := sel.(type) {
@@ -149,13 +165,19 @@ func (p *planner) extractSelections(selection []query.Selection, parentType stri
 				return nil, err
 			}
 
+			args := make(map[string]any)
+			for _, arg := range f.Arguments {
+				args[string(arg.Name)] = p.resolveValue(arg.Value, variables)
+			}
+
 			selection := &Selection{
 				ParentType: parentType,
 				Field:      string(f.Name),
+				Arguments:  args,
 			}
 
 			if len(f.Selections) > 0 {
-				subs, err := p.extractSelections(f.Selections, fieldTypeName)
+				subs, err := p.extractSelections(f.Selections, fieldTypeName, variables)
 				if err != nil {
 					return nil, err
 				}
@@ -164,7 +186,7 @@ func (p *planner) extractSelections(selection []query.Selection, parentType stri
 			ret = append(ret, selection)
 		case *query.InlineFragment:
 			typeCondition := string(f.TypeCondition)
-			subs, err := p.extractSelections(f.Selections, typeCondition)
+			subs, err := p.extractSelections(f.Selections, typeCondition, variables)
 			if err != nil {
 				return nil, err
 			}
@@ -228,6 +250,7 @@ func (p *planner) findOperationField(op *query.Operation) ([]*schema.TypeDefinit
 type Selection struct {
 	ParentType string
 	Field      string
+	Arguments  map[string]any
 
 	SubSelections []*Selection
 }
@@ -244,11 +267,13 @@ func (p *planner) plan(rootTypeName string, rootSelections []*Selection) *Plan {
 				sels := p.walk(rootSel.SubSelections, subGraph)
 
 				plan.Steps = append(plan.Steps, &Step{
-					SubGraph:     subGraph,
-					Selections:   sels,
-					RootFields:   []string{rootSel.Field},
-					ownershipMap: make(map[string]struct{}),
-					Done:         make(chan struct{}),
+					SubGraph:      subGraph,
+					Selections:    sels,
+					RootFields:    []string{rootSel.Field},
+					RootArguments: map[string]map[string]any{rootSel.Field: rootSel.Arguments},
+					OperationType: strings.ToLower(rootTypeName),
+					ownershipMap:  make(map[string]struct{}),
+					Done:          make(chan struct{}),
 				})
 				break
 			}
@@ -290,6 +315,7 @@ func (p *planner) walk(sels []*Selection, subGraph *graph.SubGraph) []*Selection
 			ret = append(ret, &Selection{
 				ParentType:    sel.ParentType,
 				Field:         sel.Field,
+				Arguments:     sel.Arguments,
 				SubSelections: subSelections,
 			})
 		} else if len(subSelections) > 0 {
