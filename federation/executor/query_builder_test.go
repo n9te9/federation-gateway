@@ -29,7 +29,7 @@ func TestQueryBuilder_Build(t *testing.T) {
 					name: String
 					price: Int
 				}`
-					sg, err := graph.NewBaseSubGraph("aaaaaaaaa", []byte(sdl), "")
+					sg, err := graph.NewSubGraph("aaaaaaaaa", []byte(sdl), "")
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -48,7 +48,6 @@ func TestQueryBuilder_Build(t *testing.T) {
 						Field:      "name",
 					},
 				},
-				IsBase: true,
 			},
 			query: `query {
 	products {

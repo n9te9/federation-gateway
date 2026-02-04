@@ -21,7 +21,7 @@ func NewQueryBuilder() *queryBuilder {
 }
 
 func (qb *queryBuilder) Build(step *planner.Step, entities Entities) (string, map[string]any, error) {
-	if len(step.DependsOn) == 0 {
+	if step.IsBase() {
 		return qb.buildBaseQuery(step)
 	}
 

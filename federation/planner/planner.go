@@ -22,12 +22,15 @@ type Step struct {
 	ID       int
 	SubGraph *graph.SubGraph
 
-	IsBase     bool
 	Selections []*Selection
 	DependsOn  []int
 	Done       chan struct{}
 
 	Err error
+}
+
+func (s *Step) IsBase() bool {
+	return len(s.DependsOn) == 0
 }
 
 func (s *Step) hasField(fieldName string) bool {
@@ -307,7 +310,6 @@ func (p *planner) plan(queryName string, typeDefinition *schema.TypeDefinition, 
 			SubGraph:   subGraph,
 			Selections: sels,
 			DependsOn:  nil,
-			IsBase:     isBase,
 			Err:        nil,
 			Done:       make(chan struct{}),
 		})
@@ -358,7 +360,13 @@ func (p *planner) solveStepDependency(steps Steps, targetStep *Step) {
 
 						if !exists && targetStep.ID != 0 {
 							targetStep.DependsOn = append(targetStep.DependsOn, providerStep.ID)
+							targetStep.SubGraph.BaseName = ""
 						}
+					} else {
+						providerStep.Selections = append(providerStep.Selections, &Selection{
+							ParentType: typeName,
+							Field:      key,
+						})
 					}
 				}
 			}
@@ -397,6 +405,11 @@ func (p *planner) solveRequiresField(plan *Plan) {
 
 					if injected {
 						ownerStep.Selections = newSelections
+					} else {
+						ownerStep.Selections = append(ownerStep.Selections, &Selection{
+							ParentType: parentType,
+							Field:      reqField,
+						})
 					}
 				}
 			}
@@ -531,6 +544,7 @@ func (p *planner) injectKey(selections []*Selection, targetTypeName string, keyF
 				break
 			}
 		}
+
 		if !exists {
 			selections = append(selections, &Selection{
 				ParentType: targetTypeName,
