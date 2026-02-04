@@ -102,7 +102,13 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 			errorsResp, ok := resp["errors"].([]any)
 			if ok {
 				e.mux.Lock()
-				mergedResponse["errors"] = append(mergedResponse["errors"].([]any), errorsResp...)
+				errs, ok := mergedResponse["errors"]
+				if !ok {
+					errs = make([]any, 0)
+					mergedResponse["errors"] = errs
+				} else {
+					mergedResponse["errors"] = append(mergedResponse["errors"].([]any), errorsResp...)
+				}
 				e.mux.Unlock()
 			}
 

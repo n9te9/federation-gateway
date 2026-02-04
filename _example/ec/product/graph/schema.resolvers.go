@@ -12,13 +12,19 @@ import (
 	"github.com/n9te9/go-graphql-federation-gateway/_example/ec/product/graph/model"
 )
 
+// CreateProductByName is the resolver for the createProductByName field.
+func (r *mutationResolver) CreateProductByName(ctx context.Context, name string) (*model.Product, error) {
+	panic(fmt.Errorf("not implemented: CreateProductByName - createProductByName"))
+}
+
 // CreateProduct is the resolver for the createProduct field.
-func (r *mutationResolver) CreateProduct(ctx context.Context, name string) (*model.Product, error) {
+func (r *mutationResolver) CreateProduct(ctx context.Context, product model.NewProduct) (*model.Product, error) {
 	newUpc := fmt.Sprintf("%d", len(products)+1)
 	newProduct := &model.Product{
-		Upc:   newUpc,
-		Name:  name,
-		Price: &[]int32{0}[0],
+		Upc:    newUpc,
+		Name:   product.Name,
+		Price:  product.Price,
+		Weight: product.Weight,
 	}
 
 	products[newUpc] = newProduct

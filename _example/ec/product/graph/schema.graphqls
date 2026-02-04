@@ -6,7 +6,15 @@ type Query {
 }
 
 type Mutation {
-  createProduct(name: String!): Product
+  createProductByName(name: String!): Product
+  createProduct(product: NewProduct!): Product
+}
+
+input NewProduct {
+  upc: String!
+  name: String!
+  price: Int
+  weight: Int
 }
 
 type Product @key(fields: "upc") {
