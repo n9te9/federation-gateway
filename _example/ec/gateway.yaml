@@ -1,22 +1,26 @@
 endpoint: /graphql
 port: 9000
+service_name: go-graphql-federation-gateway
 timeout_duration: "5s"
 enable_complement_request_id: false
 enable_hang_over_request_header: false
 services:
 - name: products
-  host: http://localhost:8001/query
+  host: http://product:8080/query
   schema_files:
   - ./product/graph/schema.graphqls
 - name: reviews
-  host: http://localhost:8002/query
+  host: http://review:8080/query
   schema_files:
   - ./review/graph/schema.graphqls
 - name: accounts
-  host: http://localhost:8003/query
+  host: http://account:8080/query
   schema_files:
   - ./account/graph/schema.graphqls
 - name: shipping
-  host: http://localhost:8004/query
+  host: http://shipping:8080/query
   schema_files:
   - ./shipping/graph/schema.graphqls
+opentelemetry:
+  tracing:
+    enable: true

@@ -353,7 +353,7 @@ func TestExecutor_Execute(t *testing.T) {
 				t.Fatalf("Failed to create SuperGraph: %v", err)
 			}
 
-			e := executor.NewExecutor(tt.httpClient, superGraph)
+			e := executor.NewExecutor(tt.httpClient, superGraph, executor.ExecutorOption{})
 			got := e.Execute(t.Context(), tt.plan, tt.variables)
 
 			if d := cmp.Diff(tt.want, got); d != "" {

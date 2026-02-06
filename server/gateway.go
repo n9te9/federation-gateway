@@ -14,7 +14,10 @@ import (
 
 	"github.com/goccy/go-yaml"
 	"github.com/n9te9/go-graphql-federation-gateway/gateway"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
+
+const gatewayVersion = "v0.1.0"
 
 func Run() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -30,6 +33,11 @@ func Run() {
 		log.Fatalf("failed to build gateway: %v", err)
 	}
 
+	gwHandler := http.Handler(gw)
+	if settings.Opentelemetry.TracingSetting.Enable {
+		gwHandler = otelhttp.NewHandler(http.Handler(gw), settings.ServiceName)
+	}
+
 	timeoutDuration, err := time.ParseDuration(settings.TimeoutDuration)
 	if err != nil {
 		log.Fatalf("failed to parse timeout duration: %v", err)
@@ -37,11 +45,16 @@ func Run() {
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", settings.Port),
-		Handler: gw,
+		Handler: gwHandler,
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill, syscall.SIGTERM)
 	defer cancel()
+
+	shutdown, err := gateway.InitTracer(ctx, settings.ServiceName, gatewayVersion)
+	if err != nil {
+		log.Fatalf("failed to initialize tracer: %v", err)
+	}
 
 	go func() {
 		log.Printf("starting gateway server on port %d", settings.Port)
@@ -59,10 +72,15 @@ func Run() {
 	if err := srv.Shutdown(timeoutCtx); err != nil {
 		log.Fatalf("failed to shutdown gateway server: %v", err)
 	}
+
+	if err := shutdown(timeoutCtx); err != nil {
+		log.Fatalf("failed to shutdown tracer: %v", err)
+	}
+
 	log.Println("gateway server stopped")
 }
 
-func loadGatewaySetting() (*gateway.GatewaySetting, error) {
+func loadGatewaySetting() (*gateway.GatewayOption, error) {
 	f, err := os.Open("gateway.yaml")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open gateway settings file: %w", err)
@@ -74,7 +92,7 @@ func loadGatewaySetting() (*gateway.GatewaySetting, error) {
 		return nil, fmt.Errorf("failed to read gateway settings file: %w", err)
 	}
 
-	var settings gateway.GatewaySetting
+	var settings gateway.GatewayOption
 	if err := yaml.Unmarshal(b, &settings); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal gateway settings: %w", err)
 	}

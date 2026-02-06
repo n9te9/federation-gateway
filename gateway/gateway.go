@@ -11,6 +11,7 @@ import (
 	"github.com/n9te9/go-graphql-federation-gateway/federation/graph"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/planner"
 	"github.com/n9te9/goliteql/query"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 type GatewayService struct {
@@ -19,22 +20,35 @@ type GatewayService struct {
 	SchemaFiles []string `yaml:"schema_files"`
 }
 
-type GatewaySetting struct {
-	Endpoint                    string           `yaml:"endpoint"`
-	Port                        int              `yaml:"port"`
-	TimeoutDuration             string           `yaml:"timeout_duration" default:"5s"`
-	EnableComplementRequestId   bool             `yaml:"enable_complement_request_id" default:"false"`
-	EnableHangOverRequestHeader bool             `yaml:"enable_hang_over_request_header" default:"true"`
-	Services                    []GatewayService `yaml:"services"`
+type GatewayOption struct {
+	Endpoint                    string               `yaml:"endpoint"`
+	ServiceName                 string               `yaml:"service_name"`
+	Port                        int                  `yaml:"port"`
+	TimeoutDuration             string               `yaml:"timeout_duration" default:"5s"`
+	EnableHangOverRequestHeader bool                 `yaml:"enable_hang_over_request_header" default:"true"`
+	Services                    []GatewayService     `yaml:"services"`
+	Opentelemetry               OpentelemetrySetting `yaml:"opentelemetry"`
 }
+
+type OpentelemetrySetting struct {
+	TracingSetting OpentelemetryTracingSetting `yaml:"tracing"`
+}
+
+type OpentelemetryTracingSetting struct {
+	Enable bool `yaml:"enable" default:"false"`
+}
+
 type gateway struct {
-	graphQLEndpoint             string
-	planner                     planner.Planner
-	executor                    executor.Executor
+	graphQLEndpoint string
+	serviceName     string
+	planner         planner.Planner
+	executor        executor.Executor
+	superGraph      *graph.SuperGraph
+	queryParser     *query.Parser
+
 	enableComplementRequestId   bool
 	enableHangOverRequestHeader bool
-	superGraph                  *graph.SuperGraph
-	queryParser                 *query.Parser
+	enableOpentelemetryTracing  bool
 }
 
 var _ http.Handler = (*gateway)(nil)
@@ -54,7 +68,7 @@ func readSchemaFiles(paths []string) ([]byte, error) {
 	return ret, nil
 }
 
-func NewGateway(settings *GatewaySetting) (*gateway, error) {
+func NewGateway(settings *GatewayOption) (*gateway, error) {
 	subGraphs := make([]*graph.SubGraph, 0, len(settings.Services))
 	allSchemaSrc := []byte{}
 
@@ -77,14 +91,28 @@ func NewGateway(settings *GatewaySetting) (*gateway, error) {
 		return nil, fmt.Errorf("failed to create supergraph: %w", err)
 	}
 
+	plannerOption := planner.PlannerOption{
+		EnableOpentelemetryTracing: settings.Opentelemetry.TracingSetting.Enable,
+	}
+
+	executorOption := executor.ExecutorOption{
+		EnableOpentelemetryTracing: settings.Opentelemetry.TracingSetting.Enable,
+	}
+
+	httpClient := &http.Client{}
+	if settings.Opentelemetry.TracingSetting.Enable {
+		httpClient.Transport = otelhttp.NewTransport(&http.Transport{})
+	}
+
 	return &gateway{
 		graphQLEndpoint:             settings.Endpoint,
 		superGraph:                  superGraph,
-		planner:                     planner.NewPlanner(superGraph),
-		enableComplementRequestId:   settings.EnableComplementRequestId,
+		planner:                     planner.NewPlanner(superGraph, plannerOption),
 		enableHangOverRequestHeader: settings.EnableHangOverRequestHeader,
-		executor:                    executor.NewExecutor(&http.Client{}, superGraph),
+		serviceName:                 settings.ServiceName,
+		executor:                    executor.NewExecutor(httpClient, superGraph, executorOption),
 		queryParser:                 query.NewParserWithLexer(),
+		enableOpentelemetryTracing:  settings.Opentelemetry.TracingSetting.Enable,
 	}, nil
 }
 

@@ -16,7 +16,8 @@ type Planner interface {
 }
 
 type planner struct {
-	superGraph *graph.SuperGraph
+	superGraph                 *graph.SuperGraph
+	enableOpentelemetryTracing bool
 }
 
 type Step struct {
@@ -47,9 +48,14 @@ const (
 	Failed
 )
 
-func NewPlanner(superGraph *graph.SuperGraph) *planner {
+type PlannerOption struct {
+	EnableOpentelemetryTracing bool
+}
+
+func NewPlanner(superGraph *graph.SuperGraph, setting PlannerOption) *planner {
 	return &planner{
-		superGraph: superGraph,
+		superGraph:                 superGraph,
+		enableOpentelemetryTracing: setting.EnableOpentelemetryTracing,
 	}
 }
 

@@ -1,33 +1,48 @@
 services:
+  gateway:
+    build: 
+      context: . 
+      dockerfile: Dockerfile
+    ports:
+      - "9000:9000"
+    environment:
+      - "OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318"
   product:
     build: 
       context: ./product 
       dockerfile: Dockerfile
     ports:
-      - "8001:8001"
+      - "8001:8080"
     environment:
-      - PORT=8001
+      - PORT=8080
   review:
     build: 
       context: ./review 
       dockerfile: Dockerfile
     ports:
-      - "8002:8002"
+      - "8002:8080"
     environment:
-      - PORT=8002
+      - PORT=8080
   account:
     build:
       context: ./account 
       dockerfile: Dockerfile
     ports:
-      - "8003:8003"
+      - "8003:8080"
     environment:
-      - PORT=8003
+      - PORT=8080
   shipping:
     build:
       context: ./shipping
       dockerfile: Dockerfile
     ports:
-      - "8004:8004"
+      - "8004:8080"
     environment:
-      - PORT=8004
+      - PORT=8080
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"
+      - "4318:4318"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
