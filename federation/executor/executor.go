@@ -29,20 +29,26 @@ type Executor interface {
 type executor struct {
 	QueryBuilder
 
-	superGraph *graph.SuperGraph
-	httpClient *http.Client
-	mux        sync.Mutex
+	superGraph                 *graph.SuperGraph
+	httpClient                 *http.Client
+	mux                        sync.Mutex
+	enableOpentelemetryTracing bool
 }
 
 var _ Executor = (*executor)(nil)
 
-func NewExecutor(httpClient *http.Client, superGraph *graph.SuperGraph) *executor {
+type ExecutorOption struct {
+	EnableOpentelemetryTracing bool
+}
+
+func NewExecutor(httpClient *http.Client, superGraph *graph.SuperGraph, option ExecutorOption) *executor {
 	qb := NewQueryBuilder()
 	return &executor{
-		QueryBuilder: qb,
-		superGraph:   superGraph,
-		httpClient:   httpClient,
-		mux:          sync.Mutex{},
+		QueryBuilder:               qb,
+		superGraph:                 superGraph,
+		httpClient:                 httpClient,
+		mux:                        sync.Mutex{},
+		enableOpentelemetryTracing: option.EnableOpentelemetryTracing,
 	}
 }
 

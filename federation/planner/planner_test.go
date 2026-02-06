@@ -676,7 +676,7 @@ func TestPlanner_Plan(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := planner.NewPlanner(tt.superGraph)
+			p := planner.NewPlanner(tt.superGraph, planner.PlannerOption{})
 			got, err := p.Plan(tt.doc, tt.variables)
 			if (err != nil) != (tt.wantErr != nil) {
 				t.Fatalf("Planner.Plan() error = %v, wantErr %v", err, tt.wantErr)

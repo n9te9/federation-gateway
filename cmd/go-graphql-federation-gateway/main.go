@@ -10,11 +10,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var SampleGatewaySetting = &gateway.GatewaySetting{
+var SampleGatewaySetting = &gateway.GatewayOption{
 	Endpoint:                    "/graphql",
 	Port:                        9000,
+	ServiceName:                 "go-graphql-federation-gateway",
 	TimeoutDuration:             "5s",
-	EnableComplementRequestId:   false,
 	EnableHangOverRequestHeader: true,
 	Services: []gateway.GatewayService{
 		{
