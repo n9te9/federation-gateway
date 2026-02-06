@@ -58,8 +58,7 @@ Tracing is enabled via `gateway.yaml` and configured using standard OTEL environ
 
 **1. Enable in `gateway.yaml`:**
 ```yaml
-telemetry:
-  service_name: "my-gateway"
+opentelemetry:
   tracing:
     enabled: true
 ```
