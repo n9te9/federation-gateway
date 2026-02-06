@@ -15,6 +15,7 @@ While existing solutions like Apollo Router (Rust) are excellent, extending them
 * **Native Go:** Easy to read, debug, and extend for Go developers.
 * **Federation v2 Compliant:** Supports core directives like `@key`, `@requires`, and `@external`.
 * **Hackable:** The Planner and Executor logic is modular, allowing for custom optimization strategies.
+* **Observable:** Built-in OpenTelemetry support for production-grade tracing.
 
 ## ✨ Key Features
 
@@ -27,7 +28,9 @@ While existing solutions like Apollo Router (Rust) are excellent, extending them
   * Avoids recursion hell by flattening entity requests.
   * Optimizes `_entities` queries by discarding unnecessary parent paths, ensuring compatibility with all subgraph implementations.
 * **Concurrent Execution:** Fetches independent subgraphs in parallel using Go routines with proper context handling.
-* **Deep Nested Resolution:** Correctly stitches data across multiple hops (e.g., `Product` -> `Review` -> `User`).
+* **Observability:**
+  * Full **OpenTelemetry** support.
+  * Traces propagate context to subgraphs (`traceparent` injection), allowing for end-to-end visualization of distributed requests.
 
 ## ⚠️ Schema Definition Best Practices
 
@@ -46,6 +49,28 @@ extend type Product @key(fields: "upc") {
 }
 ```
 
+## 🔭 Observability
+
+This gateway supports distributed tracing via **OpenTelemetry (OTLP)**.
+
+### Configuration
+Tracing is enabled via `gateway.yaml` and configured using standard OTEL environment variables.
+
+**1. Enable in `gateway.yaml`:**
+```yaml
+telemetry:
+  service_name: "my-gateway"
+  tracing:
+    enabled: true
+```
+
+**2. Configure Exporter (Environment Variables):**
+The gateway uses the OTLP HTTP exporter by default.
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
+```
+
 ## 🧩 Supported Directives
 
 | Directive | Status | Description |
@@ -62,26 +87,21 @@ There are two ways to get started: running the included example or installing th
 
 ### Option 1: Running the Example (Quick Start)
 
-The repository includes a full E-Commerce example (Product, Account, Review, Shipping services).
+The repository includes a full E-Commerce example (Product, Account, Review, Shipping services) with **Jaeger** for tracing.
 
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/n9te9/go-graphql-federation-gateway.git](https://github.com/n9te9/go-graphql-federation-gateway.git)
-    cd go-graphql-federation-gateway
+    git clone https://github.com/n9te9/go-graphql-federation-gateway.git
     ```
 
-2.  **Start Subgraphs via Docker:**
+2.  **Start Subgraphs & Jaeger via Docker:**
     Navigate to the example directory and start the microservices.
     ```bash
     cd _examples/ec
     docker compose up -d
     ```
-
-3.  **Start the Gateway:**
-    Run the gateway server pointing to the example configuration.
-    ```bash
-    go run ../../cmd/go-graphql-federation-gateway/main.go serve
-    ```
+3.  **Visualize Traces:**
+    Open Jaeger at [http://localhost:16686](http://localhost:16686) to see your request traces.
 
 ### Option 2: Installation & Usage (New Project)
 
@@ -89,7 +109,7 @@ To use this gateway with your own subgraphs:
 
 1.  **Install the binary:**
     ```bash
-    go install [github.com/n9te9/go-graphql-federation-gateway/cmd/go-graphql-federation-gateway@latest](https://github.com/n9te9/go-graphql-federation-gateway/cmd/go-graphql-federation-gateway@latest)
+    go install github.com/n9te9/go-graphql-federation-gateway/cmd/go-graphql-federation-gateway@latest
     ```
 
 2.  **Initialize Configuration:**
@@ -119,7 +139,7 @@ curl -X POST http://localhost:9000/graphql \
 ```
 
 **Result:**
-You will receive a fully stitched response, proving the `@requires` injection and nested resolution logic.
+You will receive a fully stitched response. If tracing is enabled, check Jaeger to see the breakdown of subgraph requests.
 
 ```json
 {
@@ -151,26 +171,10 @@ You will receive a fully stitched response, proving the `@requires` injection an
 We welcome contributions! Please follow the **Fork & Pull Request** workflow.
 
 1.  **Fork the Project**
-    Click the "Fork" button at the top right of this page to create your own copy of the repository.
-
-2.  **Create your Feature Branch**
-    ```bash
-    git checkout -b feature/AmazingFeature
-    ```
-
-3.  **Commit your Changes**
-    ```bash
-    git commit -m 'Add some AmazingFeature'
-    ```
-
-4.  **Push to the Branch**
-    Push the changes to **your forked repository**.
-    ```bash
-    git push origin feature/AmazingFeature
-    ```
-
+2.  **Create your Feature Branch** (`git checkout -b feature/AmazingFeature`)
+3.  **Commit your Changes** (`git commit -m 'Add some AmazingFeature'`)
+4.  **Push to the Branch** (`git push origin feature/AmazingFeature`)
 5.  **Open a Pull Request**
-    Go to the original repository on GitHub and open a Pull Request from your forked branch.
 
 ## 📝 License
 
